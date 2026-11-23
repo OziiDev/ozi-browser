@@ -20,17 +20,36 @@ pub struct PageCtx {
 }
 
 const STYLE: &str = r#"
-:root{--bg:#16171c;--card:#23242c;--fg:#e8e9ee;--muted:#9b9dab;--accent:#ff7a2f;--border:#34353f}
-@media (prefers-color-scheme:light){:root{--bg:#f4f5f9;--card:#fff;--fg:#1d1e24;--muted:#6a6c7a;--border:#d8dbe4}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
-main{max-width:820px;margin:0 auto;padding:40px 20px}h1{font-size:28px;margin:0 0 6px}
-.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin:10px 0}
-button,input,select{font:inherit}button{border:1px solid var(--border);background:var(--card);color:var(--fg);padding:7px 13px;border-radius:9px;cursor:pointer}
-button.p{background:var(--accent);border-color:var(--accent);color:#fff}button:hover{filter:brightness(1.1)}
-input[type=text],input[type=search]{width:100%;padding:9px 12px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--fg);outline:none}
-input:focus{border-color:var(--accent)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:0}
-.dis{opacity:.55}img.ic{width:36px;height:36px;border-radius:8px;object-fit:contain}
+:root{--bg:#121318;--card:#1b1c23;--card2:#22232b;--fg:#eceef4;--muted:#8e91a1;--accent:#ff7a2f;--accent2:#ff4d8d;--border:#2b2c35;--ease:cubic-bezier(.2,.8,.2,1)}
+@media (prefers-color-scheme:light){:root{--bg:#eef0f6;--card:#fff;--card2:#f3f4f9;--fg:#1b1c22;--muted:#6a6c7a;--border:#dcdfe9}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 26px;animation:fadeUp .45s var(--ease) both}
+nav a{padding:7px 14px;border-radius:20px;color:var(--muted);text-decoration:none;transition:background .18s,color .18s,transform .18s var(--ease)}
+nav a:hover{background:var(--card);color:var(--fg);transform:translateY(-1px)}
+nav a.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.5px;animation:fadeUp .45s var(--ease) .04s both}
+.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:14px 18px;margin:10px 0;
+ animation:fadeUp .45s var(--ease) both;animation-delay:calc(var(--i,0)*35ms + 80ms);transition:transform .2s var(--ease),border-color .2s,box-shadow .2s}
+.card:hover{transform:translateY(-2px);border-color:rgba(255,122,47,.45);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.card.flat:hover{transform:none;box-shadow:none;border-color:var(--border)}
+button,input,select{font:inherit}button{border:1px solid var(--border);background:var(--card2);color:var(--fg);padding:7px 14px;border-radius:10px;cursor:pointer;
+ transition:transform .12s var(--ease),filter .15s,background .15s}
+button:hover{filter:brightness(1.12)}button:active{transform:scale(.96)}
+button.p{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;color:#fff}
+input[type=text],input[type=search]{width:100%;padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--fg);outline:none;
+ transition:border-color .18s,box-shadow .2s}
+input[type=text]:focus,input[type=search]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,122,47,.18)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grow{flex:1;min-width:0}
+.dis{opacity:.55}img.ic{width:38px;height:38px;border-radius:10px;object-fit:contain}
 .t{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+code{background:var(--card2);padding:1px 6px;border-radius:6px;font-size:.9em}
+.switch{position:relative;display:inline-flex;align-items:center;gap:12px;cursor:pointer}
+.switch input{display:none}.switch i{width:42px;height:24px;border-radius:12px;background:var(--border);position:relative;transition:background .22s;flex:none}
+.switch i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .25s var(--ease)}
+.switch input:checked+i{background:linear-gradient(135deg,var(--accent),var(--accent2))}.switch input:checked+i::after{transform:translateX(18px)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 "#;
 
 /// JSON'u `<script>` içine güvenle gömmek için kaçış.
@@ -38,16 +57,29 @@ fn embed(v: &Value) -> String {
     v.to_string().replace("</", "<\\/").replace("<!--", "<\\!--")
 }
 
-fn page(title: &str, body: &str, script: &str) -> String {
+const NAV: &[(&str, &str, &str)] = &[
+    ("history", "Geçmiş", "ozi://history"),
+    ("bookmarks", "Yer imleri", "ozi://bookmarks"),
+    ("downloads", "İndirmeler", "ozi://downloads"),
+    ("extensions", "Uzantılar", "ozi://extensions"),
+    ("settings", "Ayarlar", "ozi://settings"),
+];
+
+fn page(active: &str, title: &str, body: &str, script: &str) -> String {
+    let nav: String = NAV
+        .iter()
+        .map(|(id, label, href)| format!("<a href=\"{href}\"{}>{label}</a>", if *id == active { " class=on" } else { "" }))
+        .collect();
     format!(
         "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title>\
-         <style>{STYLE}</style><main>{body}</main><script>function send(o){{window.ipc.postMessage(JSON.stringify(o));}}\n{script}</script>"
+         <style>{STYLE}</style><main><nav>{nav}</nav>{body}</main><script>function send(o){{window.ipc.postMessage(JSON.stringify(o));}}\n\
+         document.querySelectorAll('.card').forEach(function(c,i){{c.style.setProperty('--i',Math.min(i,12));}});\n{script}</script>"
     )
 }
 
 pub fn serve(ctx: &PageCtx, req: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
     let html = match req.uri().path().trim_matches('/') {
-        "newtab" | "" => newtab(&ctx.settings),
+        "newtab" | "" => newtab(&ctx.settings, &ctx.user),
         "extensions" => extensions(&ctx.exts),
         "history" => history(&ctx.user),
         "bookmarks" => bookmarks(&ctx.user),
@@ -58,7 +90,7 @@ pub fn serve(ctx: &PageCtx, req: &Request<Vec<u8>>) -> Response<Cow<'static, [u8
     respond(StatusCode::OK, "text/html; charset=utf-8", html.into_bytes())
 }
 
-fn newtab(settings: &SettingsRef) -> String {
+fn newtab(settings: &SettingsRef, user: &UserRef) -> String {
     let (first, second) = settings
         .read()
         .map(|s| {
@@ -67,23 +99,76 @@ fn newtab(settings: &SettingsRef) -> String {
             (
                 default.map(|e| e.name.clone()).unwrap_or_default(),
                 other
-                    .map(|e| format!("{} (<code>{}</code>)", html_escape(&e.name), html_escape(&e.keyword)))
+                    .map(|e| format!("{} için <code>{}</code>", html_escape(&e.name), html_escape(&e.keyword)))
                     .unwrap_or_default(),
             )
         })
         .unwrap_or_default();
-    let body = format!(
-        r#"<div style="text-align:center;padding-top:14vh"><h1 style="font-size:54px;letter-spacing:-1px">Ozi<b style="color:var(--accent)">.</b></h1>
-<form id=f style="margin:28px auto 8px;max-width:560px"><input type=text id=q autofocus autocomplete=off style="padding:15px 22px;border-radius:30px;font-size:17px"
-placeholder="{first_e} ile ara ya da adres yaz"></form>
-<p class=muted>Varsayılan: {first_e} · <code>anahtar sorgu</code> ile başka motor: {second}</p>
-<p class=muted><a href="ozi://history">Geçmiş</a> · <a href="ozi://bookmarks">Yer imleri</a> · <a href="ozi://downloads">İndirmeler</a> · <a href="ozi://settings">Ayarlar</a></p></div>"#,
-        first_e = html_escape(&first),
+    let sites: Vec<Value> = user
+        .lock()
+        .map(|u| u.top_sites(8).into_iter().map(|(url, title, host)| json!({"url": url, "title": title, "host": host})).collect())
+        .unwrap_or_default();
+    let css = r#"
+body{min-height:100vh;overflow-x:hidden}
+.bg{position:fixed;inset:0;z-index:-1;overflow:hidden}
+.bg i{position:absolute;width:55vmax;height:55vmax;border-radius:50%;filter:blur(90px);opacity:.38;animation:drift 26s ease-in-out infinite alternate}
+.bg i:nth-child(1){background:#ff7a2f;left:-15vmax;top:-20vmax}
+.bg i:nth-child(2){background:#ff4d8d;right:-20vmax;top:5vmax;animation-duration:32s;animation-delay:-8s}
+.bg i:nth-child(3){background:#6a5cff;left:20vmax;bottom:-28vmax;animation-duration:38s;animation-delay:-15s}
+@media (prefers-color-scheme:light){.bg i{opacity:.28}}
+@keyframes drift{to{transform:translate(9vmax,6vmax) scale(1.15)}}
+.wrap{max-width:720px;margin:0 auto;padding:11vh 20px 40px;text-align:center}
+#clock{font-size:76px;font-weight:200;letter-spacing:-3px;line-height:1;animation:fadeUp .7s var(--ease) both}
+#greet{margin:8px 0 30px;color:var(--muted);font-size:17px;animation:fadeUp .7s var(--ease) .08s both}
+form{position:relative;max-width:580px;margin:0 auto;animation:fadeUp .7s var(--ease) .16s both}
+form input{padding:16px 54px 16px 24px;border-radius:32px;font-size:17px;background:rgba(127,127,140,.14);border:1px solid rgba(127,127,140,.25);
+ backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:border-color .2s,box-shadow .25s,transform .3s var(--ease),background .2s}
+form input:focus{transform:scale(1.025);background:rgba(127,127,140,.2)}
+form button{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:40px;height:40px;padding:0;border-radius:50%;border:0;font-size:18px;
+ background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+form button:active{transform:translateY(-50%) scale(.92)}
+.hint{margin:14px 0 36px;color:var(--muted);font-size:13px;animation:fadeUp .7s var(--ease) .24s both}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:9px;padding:16px 8px 12px;border-radius:18px;text-decoration:none!important;color:var(--fg);
+ background:rgba(127,127,140,.1);border:1px solid transparent;animation:fadeUp .6s var(--ease) both;animation-delay:calc(var(--i)*55ms + 330ms);
+ transition:transform .22s var(--ease),background .2s,border-color .2s,box-shadow .25s}
+.tile:hover{transform:translateY(-4px);background:rgba(127,127,140,.2);border-color:rgba(255,122,47,.4);box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.tile:active{transform:translateY(-1px) scale(.97)}
+.av{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-weight:700;font-size:20px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25)}
+.tile span.n{max-width:100%;font-size:13px}
+.empty{color:var(--muted);font-size:14px;animation:fadeUp .6s var(--ease) .35s both}
+.links{margin-top:42px;font-size:13px;color:var(--muted);animation:fadeUp .6s var(--ease) .6s both}.links a{margin:0 9px;color:var(--muted)}.links a:hover{color:var(--accent)}
+@media (max-width:560px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}#clock{font-size:56px}}
+"#;
+    let script = format!(
+        r#"var SITES={sites};
+function hue(s){{var h=0;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))%360;return h;}}
+function tick(){{var d=new Date(),h=d.getHours();
+document.getElementById('clock').textContent=('0'+h).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+var g=h<5?'İyi geceler':h<12?'Günaydın':h<18?'İyi günler':'İyi akşamlar';
+document.getElementById('greet').textContent=g+' · '+d.toLocaleDateString('tr-TR',{{weekday:'long',day:'numeric',month:'long'}});}}
+tick();setInterval(tick,15000);
+var box=document.getElementById('tiles');
+SITES.forEach(function(s,i){{var a=document.createElement('a');a.className='tile';a.href=s.url;a.style.setProperty('--i',i);
+var av=document.createElement('div');av.className='av';av.style.background='linear-gradient(135deg,hsl('+hue(s.host)+',65%,52%),hsl('+((hue(s.host)+40)%360)+',65%,42%))';
+av.textContent=s.host[0].toUpperCase();var n=document.createElement('span');n.className='n t';n.textContent=s.title||s.host;n.title=s.url;
+a.append(av,n);box.appendChild(a);}});
+if(!SITES.length)box.innerHTML='<div class=empty style="grid-column:1/-1">Gezdikçe en çok kullandığınız siteler burada görünür.</div>';
+document.getElementById('f').onsubmit=function(e){{e.preventDefault();send({{cmd:'go',input:document.getElementById('q').value}});}};
+window.addEventListener('keydown',function(e){{if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.key.length===1)document.getElementById('q').focus();}});"#,
+        sites = embed(&Value::Array(sites))
     );
-    page(
-        "Yeni sekme",
-        &body,
-        "document.getElementById('f').onsubmit=function(e){e.preventDefault();send({cmd:'go',input:document.getElementById('q').value});};",
+    format!(
+        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Yeni sekme</title>\
+         <style>{STYLE}{css}</style><div class=bg><i></i><i></i><i></i></div>\
+         <div class=wrap><div id=clock></div><div id=greet></div>\
+         <form id=f><input type=text id=q autofocus autocomplete=off placeholder=\"{first_e} ile ara ya da adres yaz\"><button type=submit>→</button></form>\
+         <div class=hint>{second}</div><div class=tiles id=tiles></div>\
+         <div class=links><a href=\"ozi://history\">Geçmiş</a><a href=\"ozi://bookmarks\">Yer imleri</a><a href=\"ozi://downloads\">İndirmeler</a>\
+         <a href=\"ozi://extensions\">Uzantılar</a><a href=\"ozi://settings\">Ayarlar</a></div></div>\
+         <script>function send(o){{window.ipc.postMessage(JSON.stringify(o));}}\n{script}</script>",
+        first_e = html_escape(&first),
+        second = if second.is_empty() { String::new() } else { format!("Başka motor: {second}") },
     )
 }
 
@@ -126,7 +211,7 @@ btn('Kaldır',function(){{if(confirm(e.name+' kaldırılsın mı?'))send({{cmd:'
 box.appendChild(d);}});"#,
         data = embed(&Value::Array(list))
     );
-    page("Uzantılar", body, &script)
+    page("extensions", "Uzantılar", body, &script)
 }
 
 fn history(user: &UserRef) -> String {
@@ -155,7 +240,7 @@ if(!n)box.innerHTML='<div class="card muted">Kayıt yok.</div>';}}
 document.getElementById('q').oninput=draw;draw();"#,
         data = embed(&Value::Array(list))
     );
-    page("Geçmiş", body, &script)
+    page("history", "Geçmiş", body, &script)
 }
 
 fn bookmarks(user: &UserRef) -> String {
@@ -173,7 +258,7 @@ var u=document.createElement('div');u.className='muted t';u.textContent=h.url;w.
 var b=document.createElement('button');b.textContent='Kaldır';b.onclick=function(){{send({{cmd:'bm_remove',url:h.url}});}};d.appendChild(b);box.appendChild(d);}});"#,
         data = embed(&Value::Array(list))
     );
-    page("Yer imleri", body, &script)
+    page("bookmarks", "Yer imleri", body, &script)
 }
 
 fn downloads(user: &UserRef) -> String {
@@ -199,19 +284,19 @@ if(h.state==='done'){{var b=document.createElement('button');b.textContent='Klas
 box.appendChild(d);}});"#,
         data = embed(&Value::Array(list))
     );
-    page("İndirmeler", body, &script)
+    page("downloads", "İndirmeler", body, &script)
 }
 
 fn settings(settings: &SettingsRef) -> String {
     let s = settings.read().map(|s| s.clone()).unwrap_or_default();
     let data = serde_json::to_value(&s).unwrap_or(Value::Null);
     let body = r#"<h1>Ayarlar</h1>
-<div class=card><b>Arama motorları</b><p class=muted>Seçili olan varsayılandır. Adres çubuğunda <code>anahtar sorgu</code> yazarak diğerlerini kullanın. URL'de <code>%s</code> sorgunun yerine geçer.</p>
+<div class="card flat"><b>Arama motorları</b><p class=muted>Seçili olan varsayılandır. Adres çubuğunda <code>anahtar sorgu</code> yazarak diğerlerini kullanın. URL'de <code>%s</code> sorgunun yerine geçer.</p>
 <div id=engines></div>
 <div class=row style="margin-top:10px"><input type=text id=nn placeholder="Ad" style="width:130px"><input type=text id=nk placeholder="Anahtar" style="width:90px">
 <input type=text id=nu placeholder="https://site.com/ara?q=%s" class=grow><button id=add>Ekle</button></div></div>
-<div class=card><b>Ana sayfa</b><div style="margin-top:8px"><input type=text id=home></div></div>
-<div class=card><label><input type=checkbox id=ads> Reklam ve izleyicileri engelle <span class=muted>(Linux; yeniden başlatma gerekmez)</span></label></div>
+<div class="card flat"><b>Ana sayfa</b><div style="margin-top:8px"><input type=text id=home></div></div>
+<div class="card flat"><label class=switch><input type=checkbox id=ads><i></i><span>Reklam ve izleyicileri engelle <span class=muted>(Linux)</span></span></label></div>
 <div class=row><button class=p id=save>Kaydet</button><span id=msg class=muted></span></div>"#;
     let script = format!(
         r#"var S={data};var box=document.getElementById('engines');
@@ -231,7 +316,7 @@ document.getElementById('save').onclick=function(){{S.homepage=home.value.trim()
 draw();"#,
         data = embed(&data)
     );
-    page("Ayarlar", body, &script)
+    page("settings", "Ayarlar", body, &script)
 }
 
 #[cfg(test)]
@@ -261,7 +346,7 @@ mod tests {
     #[test]
     fn pages_render_and_escape() {
         let (ctx, dir) = ctx_with_evil_ext();
-        let nt = newtab(&ctx.settings);
+        let nt = newtab(&ctx.settings, &ctx.user);
         assert!(nt.contains("DuckDuckGo ile ara"), "varsayılan motor DuckDuckGo olmalı");
         assert!(nt.contains("Google"), "ikinci motor Google olmalı");
 
@@ -282,10 +367,37 @@ mod tests {
         assert!(settings(&ctx.settings).contains("duckduckgo"));
 
         if let Ok(out) = std::env::var("OZI_DUMP") {
+            // Görsel inceleme için gerçekçi örnek veri
+            {
+                let mut u = ctx.user.lock().unwrap();
+                *u = UserData::default();
+                for (i, (url, title)) in [
+                    ("https://github.com/OziiDev/ozi-browser", "OziiDev/ozi-browser"),
+                    ("https://www.youtube.com/", "YouTube"),
+                    ("https://duckduckgo.com/?q=rust", "rust at DuckDuckGo"),
+                    ("https://doc.rust-lang.org/book/", "The Rust Programming Language"),
+                    ("https://news.ycombinator.com/", "Hacker News"),
+                    ("https://www.wikipedia.org/", "Wikipedia"),
+                    ("https://crates.io/", "crates.io: Rust Package Registry"),
+                    ("https://archlinux.org/", "Arch Linux"),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    for _ in 0..(8 - i) {
+                        u.add_visit(url, title, 1_795_000_000 + i as u64 * 3600);
+                    }
+                }
+                u.toggle_bookmark("https://www.reddit.com/", "Reddit", 1);
+                u.download_started("https://example.com/ozi.tar.gz", "/home/ozi/İndirilenler/ozi.tar.gz", 1_795_000_100);
+                u.download_finished("https://example.com/ozi.tar.gz", Some("/home/ozi/İndirilenler/ozi.tar.gz"), true);
+            }
             for (n, h) in [
-                ("newtab", nt),
+                ("newtab", newtab(&ctx.settings, &ctx.user)),
                 ("extensions", ex),
                 ("history", history(&ctx.user)),
+                ("bookmarks", bookmarks(&ctx.user)),
+                ("downloads", downloads(&ctx.user)),
                 ("settings", settings(&ctx.settings)),
             ] {
                 std::fs::write(format!("{out}/{n}.html"), h).unwrap();

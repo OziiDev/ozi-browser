@@ -246,7 +246,8 @@ impl App {
         let tabs: Vec<Value> = self
             .tabs
             .iter()
-            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading, "private": t.private}))
+            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading, "private": t.private,
+                "favicon": !t.private && (t.url.starts_with("http://") || t.url.starts_with("https://"))}))
             .collect();
         let exts: Vec<Value> = self
             .enabled_exts()
@@ -264,7 +265,18 @@ impl App {
             .tab(self.active)
             .zip(self.user.lock().ok())
             .is_some_and(|(t, u)| u.is_bookmarked(&t.url));
-        let state = json!({"tabs": tabs, "active": self.active, "exts": exts, "bookmarked": bookmarked, "find": self.find_open});
+        let engines: Vec<Value> = self
+            .settings
+            .read()
+            .map(|s| {
+                s.engines
+                    .iter()
+                    .map(|e| json!({"name": e.name, "keyword": e.keyword, "default": e.id == s.default_engine}))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let state = json!({"tabs": tabs, "active": self.active, "exts": exts, "engines": engines,
+            "bookmarked": bookmarked, "find": self.find_open});
         let _ = self.ui.evaluate_script(&format!("window.oziUi&&window.oziUi.state({state})"));
         if let Some(t) = self.tab(self.active) {
             let title = if t.title.is_empty() { "Ozi Browser".to_string() } else { format!("{} — Ozi", t.title) };
@@ -801,6 +813,20 @@ impl App {
         match v["cmd"].as_str().unwrap_or("") {
             "ready" => self.push_ui(),
             "private_tab" => self.on_shortcut(keys::Action::PrivateTab),
+            "stop" => self.eval_active("window.stop()"),
+            "suggest" => {
+                let q = s_arg("q");
+                let list: Vec<Value> = self
+                    .user
+                    .lock()
+                    .map(|u| u.suggest(&q, 12).into_iter().map(|(url, title)| json!({"url": url, "title": title})).collect())
+                    .unwrap_or_default();
+                let _ = self.ui.evaluate_script(&format!(
+                    "window.oziUi&&window.oziUi.suggest({},{})",
+                    json!(q),
+                    Value::Array(list)
+                ));
+            }
             "bookmark" => self.toggle_bookmark(),
             "find_toggle" => self.set_find(!self.find_open),
             "find" => self.find(&s_arg("q"), v["back"].as_bool().unwrap_or(false), v["fresh"].as_bool().unwrap_or(false)),

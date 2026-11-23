@@ -5,100 +5,273 @@
 <title>Ozi UI</title>
 <style>
   :root {
-    --bg: #1b1c21; --bar: #25262d; --tab: #2c2d35; --fg: #e8e9ee; --muted: #9b9dab;
-    --accent: #ff7a2f; --input: #14151a; --border: #34353f; --private: #7c5cff;
+    --bg: #131419; --bar: #1d1e25; --tab: #191a20; --tab-hover: #22232b; --fg: #eceef4; --muted: #8e91a1;
+    --accent: #ff7a2f; --accent2: #ff4d8d; --input: #12131800; --field: #14151b; --border: #2b2c35;
+    --hover: rgba(255,255,255,.08); --press: rgba(255,255,255,.14); --private: #8b6dff; --ease: cubic-bezier(.2,.8,.2,1);
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg: #dfe1e8; --bar: #f4f5f9; --tab: #e6e8ef; --fg: #1d1e24; --muted: #6a6c7a; --input: #e9ebf2; --border: #d0d3dd; }
+    :root { --bg: #dcdfe8; --bar: #f6f7fb; --tab: #e3e6ee; --tab-hover: #eceef5; --fg: #1b1c22; --muted: #686b7b;
+      --field: #e8ebf3; --border: #d3d6e0; --hover: rgba(0,0,0,.07); --press: rgba(0,0,0,.13); }
   }
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
   html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
     font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* ---------- sekmeler ---------- */
   #tabs { display: flex; align-items: flex-end; height: 38px; padding: 6px 8px 0; gap: 2px; }
-  .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 220px;
-    height: 32px; padding: 0 8px 0 12px; border-radius: 9px 9px 0 0; background: var(--tab); color: var(--muted); cursor: default; }
+  .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 38px; flex: 0 1 220px; height: 32px;
+    padding: 0 6px 0 10px; border-radius: 10px 10px 0 0; background: var(--tab); color: var(--muted); cursor: default; overflow: hidden;
+    transition: background .18s var(--ease), color .18s var(--ease); }
+  .tab:hover { background: var(--tab-hover); color: var(--fg); }
   .tab.active { background: var(--bar); color: var(--fg); }
-  .tab.private.active { box-shadow: inset 0 2px 0 var(--private); }
-  .tab .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .tab .x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: none; color: inherit; cursor: pointer; line-height: 18px; }
-  .tab .x:hover { background: rgba(127,127,127,.3); }
-  .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); border-top-color: var(--accent);
-    animation: sp .7s linear infinite; flex: none; }
-  @keyframes sp { to { transform: rotate(360deg); } }
-  #newtab { margin: 0 0 4px 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
-  #newtab:hover, .nb:hover { background: rgba(127,127,127,.25); }
-  #bar { display: flex; align-items: center; gap: 3px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
-  .nb { width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 16px; cursor: pointer; flex: none;
-    display: grid; place-items: center; }
+  .tab.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2)); animation: grow .28s var(--ease); transform-origin: left; }
+  .tab.private.active::after { background: var(--private); }
+  .tab.entering { animation: tabIn .26s var(--ease); }
+  .tab.leaving { animation: tabOut .2s var(--ease) forwards; pointer-events: none; }
+  @keyframes tabIn { from { flex-basis: 0; opacity: 0; transform: translateY(8px) scale(.96); } }
+  @keyframes tabOut { to { flex-basis: 0; min-width: 0; opacity: 0; padding: 0; gap: 0; transform: scale(.9); } }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .fav { position: relative; width: 16px; height: 16px; flex: none; border-radius: 5px; overflow: hidden; display: grid; place-items: center;
+    font-size: 10px; font-weight: 700; color: #fff; }
+  .fav img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--tab); }
+  .fav .sp { position: absolute; inset: -1px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+    animation: spin .7s linear infinite; display: none; background: rgba(0,0,0,.25); }
+  .tab.loading .fav .sp { display: block; }
+  .tab.private .fav { outline: 2px solid var(--private); outline-offset: 1px; }
+  .tab .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+  .tab .x { width: 20px; height: 20px; border-radius: 6px; border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center;
+    opacity: 0; transition: opacity .15s, background .15s; flex: none; }
+  .tab:hover .x, .tab.active .x { opacity: .8; }
+  .tab .x:hover { background: var(--press); opacity: 1; }
+  .tab .x svg { width: 13px; height: 13px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #newtab { margin: 0 0 3px 4px; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+    display: grid; place-items: center; transition: background .15s, color .15s, transform .15s var(--ease); flex: none; }
+  #newtab:hover { background: var(--hover); color: var(--fg); transform: rotate(90deg); }
+
+  /* ---------- araç çubuğu ---------- */
+  #bar { position: relative; display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
+  .nb { position: relative; width: 32px; height: 32px; border: 0; border-radius: 9px; background: none; color: var(--fg); cursor: pointer; flex: none;
+    display: grid; place-items: center; transition: background .15s, transform .12s var(--ease), color .15s; }
+  .nb:hover { background: var(--hover); }
+  .nb:active { background: var(--press); transform: scale(.9); }
   .nb img { width: 18px; height: 18px; object-fit: contain; }
+  .nb.spinning svg { animation: spin .45s var(--ease); }
   #star.on { color: var(--accent); }
-  #omni { flex: 1; min-width: 80px; height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 16px; outline: none;
-    background: var(--input); color: var(--fg); font-size: 14px; user-select: text; -webkit-user-select: text; }
-  #omni:focus, #fq:focus { border-color: var(--accent); }
+  #star.on svg { fill: currentColor; }
+  #star.pop svg { animation: pop .4s var(--ease); }
+  @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.45) rotate(-12deg); } 100% { transform: scale(1); } }
+  #omniwrap { position: relative; flex: 1; min-width: 80px; height: 34px; margin: 0 6px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    border-radius: 17px; background: var(--field); border: 1px solid transparent; transition: border-color .18s, box-shadow .2s, background .18s; }
+  #omniwrap:hover { border-color: var(--border); }
+  #omniwrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,122,47,.18); }
+  #omniwrap.private:focus-within { border-color: var(--private); box-shadow: 0 0 0 3px rgba(139,109,255,.22); }
+  #sec { color: var(--muted); display: grid; place-items: center; transition: color .2s; }
+  #sec svg { width: 15px; height: 15px; }
+  #sec.ok { color: #4cc38a; }
+  #sec.bad { color: #e0a34a; }
+  #omni { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none; color: var(--fg); font-size: 14px;
+    user-select: text; -webkit-user-select: text; }
+  #omni::selection { background: rgba(255,122,47,.35); }
+  #chip { flex: none; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 10px; background: var(--hover);
+    opacity: 0; transform: translateX(6px); transition: opacity .18s, transform .18s var(--ease); pointer-events: none; white-space: nowrap; }
+  #chip.show { opacity: 1; transform: none; }
   #exts { display: flex; gap: 2px; }
+  #sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex: none; }
+  #progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #progress.on { opacity: 1; }
+  #progress::before { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent); animation: slide 1.1s ease-in-out infinite; }
+  #progress.private::before { background: linear-gradient(90deg, transparent, var(--private), transparent); }
+  @keyframes slide { from { left: -40%; } to { left: 100%; } }
+
+  /* ---------- sayfada ara ---------- */
   #find { display: none; align-items: center; gap: 6px; height: 40px; padding: 0 12px; background: var(--bar); border-bottom: 1px solid var(--border); }
-  #find.open { display: flex; }
-  #fq { width: 260px; height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 14px; outline: none;
-    background: var(--input); color: var(--fg); font-size: 13px; user-select: text; -webkit-user-select: text; }
-  #find .nb { width: 28px; height: 28px; font-size: 14px; }
+  #find.open { display: flex; animation: drop .22s var(--ease); }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+  #fq { width: 260px; height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 14px; outline: none; background: var(--field);
+    color: var(--fg); font-size: 13px; user-select: text; -webkit-user-select: text; transition: border-color .18s, box-shadow .2s; }
+  #fq:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,122,47,.18); }
+  #find .nb { width: 28px; height: 28px; }
+  #find .nb svg { width: 16px; height: 16px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+    <symbol id="i-reload" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.95 6 6.55.95-4.75 4.62 1.12 6.53L12 17.5l-5.87 3.1 1.12-6.53L2.5 9.45l6.55-.95L12 2.5z"/></symbol>
+    <symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-bm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-dl" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-set" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="M21 21l-4.3-4.3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  </svg>
+
   <div id="tabs"></div>
   <div id="bar">
-    <button class="nb" id="back" title="Geri (Alt+←)">←</button>
-    <button class="nb" id="fwd" title="İleri (Alt+→)">→</button>
-    <button class="nb" id="reload" title="Yenile (Ctrl+R)">⟳</button>
-    <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="Ara ya da adres yaz  ·  g sorgu → Google">
-    <button class="nb" id="star" title="Yer imi ekle (Ctrl+D)">☆</button>
+    <button class="nb" id="back" title="Geri (Alt+←)"><svg class="ic"><use href="#i-back"/></svg></button>
+    <button class="nb" id="fwd" title="İleri (Alt+→)"><svg class="ic"><use href="#i-fwd"/></svg></button>
+    <button class="nb" id="reload" title="Yenile (Ctrl+R)"><svg class="ic"><use href="#i-reload"/></svg></button>
+    <div id="omniwrap">
+      <span id="sec"><svg class="ic"><use href="#i-search"/></svg></span>
+      <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="Ara ya da adres yaz">
+      <span id="chip"></span>
+    </div>
+    <button class="nb" id="star" title="Yer imi ekle (Ctrl+D)"><svg class="ic"><use href="#i-star"/></svg></button>
     <div id="exts"></div>
-    <button class="nb" id="hist" title="Geçmiş (Ctrl+H)">🕘</button>
-    <button class="nb" id="bms" title="Yer imleri">📑</button>
-    <button class="nb" id="dls" title="İndirmeler (Ctrl+J)">⬇</button>
-    <button class="nb" id="extpage" title="Uzantılar">🧩</button>
-    <button class="nb" id="setpage" title="Ayarlar">⚙</button>
+    <span id="sep"></span>
+    <button class="nb" id="hist" title="Geçmiş (Ctrl+H)"><svg class="ic"><use href="#i-hist"/></svg></button>
+    <button class="nb" id="bms" title="Yer imleri"><svg class="ic"><use href="#i-bm"/></svg></button>
+    <button class="nb" id="dls" title="İndirmeler (Ctrl+J)"><svg class="ic"><use href="#i-dl"/></svg></button>
+    <button class="nb" id="extpage" title="Uzantılar"><svg class="ic"><use href="#i-ext"/></svg></button>
+    <button class="nb" id="setpage" title="Ayarlar"><svg class="ic"><use href="#i-set"/></svg></button>
+    <div id="progress"></div>
   </div>
   <div id="find">
     <input id="fq" type="text" spellcheck="false" placeholder="Sayfada ara…">
-    <button class="nb" id="fprev" title="Önceki (Shift+Enter)">↑</button>
-    <button class="nb" id="fnext" title="Sonraki (Enter)">↓</button>
-    <button class="nb" id="fclose" title="Kapat (Esc)">✕</button>
+    <button class="nb" id="fprev" title="Önceki (Shift+Enter)"><svg class="ic"><use href="#i-up"/></svg></button>
+    <button class="nb" id="fnext" title="Sonraki (Enter)"><svg class="ic"><use href="#i-down"/></svg></button>
+    <button class="nb" id="fclose" title="Kapat (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
   </div>
 <script>
-  var S = { tabs: [], active: 0, exts: [], bookmarked: false, find: false };
+  var S = { tabs: [], active: 0, exts: [], engines: [], bookmarked: false, find: false };
   var $ = function (id) { return document.getElementById(id); };
-  function ipc(o) { window.ipc.postMessage(JSON.stringify(o)); }
-  function go(u) { ipc({ cmd: 'go', input: u }); }
+  var tabEls = {};
+  var wasBookmarked = false;
+  function post(o) { window.ipc.postMessage(JSON.stringify(o)); }
+  function go(u) { post({ cmd: 'go', input: u }); }
+  function icon(id) { return '<svg class="ic"><use href="#' + id + '"/></svg>'; }
+
+  function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+  function hue(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
+
+  function makeTab(t) {
+    var el = document.createElement('div');
+    el.className = 'tab entering';
+    el.innerHTML = '<span class="fav"><b></b><span class="sp"></span></span><span class="t"></span><button class="x" title="Sekmeyi kapat">' + icon('i-x') + '</button>';
+    el.onclick = function () { post({ cmd: 'switch', id: el._id }); };
+    el.onauxclick = function (e) { if (e.button === 1) post({ cmd: 'close_tab', id: el._id }); };
+    el.querySelector('.x').onclick = function (e) { e.stopPropagation(); post({ cmd: 'close_tab', id: el._id }); };
+    el.addEventListener('animationend', function (e) { if (e.animationName === 'tabIn') el.classList.remove('entering'); });
+    return el;
+  }
+
+  function updateTab(el, t) {
+    el._id = t.id;
+    el.classList.toggle('active', t.id === S.active);
+    el.classList.toggle('private', !!t.private);
+    el.classList.toggle('loading', !!t.loading);
+    var internal = t.url.indexOf('ozi://') === 0;
+    var host = internal ? '' : hostOf(t.url);
+    var label = t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : (host || t.url)) || 'Yeni sekme';
+    el.querySelector('.t').textContent = label;
+    el.title = label;
+    var fav = el.querySelector('.fav');
+    var key = internal ? 'ozi' : host;
+    if (el._host !== key) {
+      el._host = key;
+      var old = fav.querySelector('img'); if (old) old.remove();
+      fav.style.background = key === 'ozi' || !key ? 'linear-gradient(135deg,#ff7a2f,#ff4d8d)' : 'hsl(' + hue(key) + ',55%,48%)';
+      fav.querySelector('b').textContent = key === 'ozi' || !key ? 'O' : key[0].toUpperCase();
+      if (t.favicon && key && key !== 'ozi') {
+        var img = new Image();
+        img.onload = function () { if (img.naturalWidth > 1) { fav.appendChild(img); } };
+        img.src = new URL(t.url).origin + '/favicon.ico';
+      }
+    }
+  }
+
+  function syncTabs() {
+    var box = $('tabs');
+    var alive = {};
+    S.tabs.forEach(function (t) { alive[t.id] = true; });
+    Object.keys(tabEls).forEach(function (id) {
+      if (!alive[id]) {
+        var el = tabEls[id]; delete tabEls[id];
+        el.classList.remove('entering'); el.classList.add('leaving');
+        setTimeout(function () { el.remove(); }, 260);
+      }
+    });
+    var nt = $('newtab');
+    if (!nt) {
+      nt = document.createElement('button');
+      nt.id = 'newtab'; nt.title = 'Yeni sekme (Ctrl+T)'; nt.innerHTML = icon('i-plus');
+      nt.onclick = function () { post({ cmd: 'new_tab' }); };
+      box.appendChild(nt);
+    }
+    S.tabs.forEach(function (t) {
+      var el = tabEls[t.id];
+      if (!el) { el = makeTab(t); tabEls[t.id] = el; box.insertBefore(el, nt); }
+      updateTab(el, t);
+    });
+    // sıra
+    var ref = nt;
+    for (var i = S.tabs.length - 1; i >= 0; i--) {
+      var e2 = tabEls[S.tabs[i].id];
+      if (e2.nextSibling !== ref) box.insertBefore(e2, ref);
+      ref = e2;
+    }
+  }
+
+  function looksLikeUrl(v) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return true;
+    return !/\s/.test(v) && (/^localhost(:\d+)?(\/|$)/.test(v) || /^[^\s.]+(\.[^\s.]+)+(:\d+)?([\/?#].*)?$/.test(v));
+  }
+
+  function updateChip() {
+    var v = $('omni').value.trim(), chip = $('chip');
+    if (!v || document.activeElement !== $('omni')) { chip.classList.remove('show'); return; }
+    var text;
+    var m = /^(\S+)\s+\S/.exec(v), eng = null;
+    if (m) S.engines.forEach(function (e) { if (e.keyword.toLowerCase() === m[1].toLowerCase()) eng = e; });
+    if (eng) text = eng.name + ' ile ara ↵';
+    else if (looksLikeUrl(v)) text = 'Git ↵';
+    else { var d = S.engines.filter(function (e) { return e.default; })[0]; text = (d ? d.name : 'Ara') + ' ile ara ↵'; }
+    chip.textContent = text; chip.classList.add('show');
+  }
+
+  function updateSecurity(url) {
+    var sec = $('sec'), ico = 'i-search', cls = '';
+    if (url.indexOf('https://') === 0) { ico = 'i-lock'; cls = 'ok'; }
+    else if (url.indexOf('http://') === 0) { ico = 'i-unlock'; cls = 'bad'; }
+    sec.className = cls;
+    sec.innerHTML = icon(ico);
+  }
 
   function render() {
-    var box = $('tabs');
-    box.textContent = '';
-    S.tabs.forEach(function (t) {
-      var el = document.createElement('div');
-      el.className = 'tab' + (t.id === S.active ? ' active' : '') + (t.private ? ' private' : '');
-      if (t.loading) { var sp = document.createElement('span'); sp.className = 'spin'; el.appendChild(sp); }
-      var title = document.createElement('span');
-      title.className = 't';
-      title.textContent = (t.private ? '🕶 ' : '') + (t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : t.url) || 'Yeni sekme');
-      el.appendChild(title);
-      var x = document.createElement('button');
-      x.className = 'x'; x.textContent = '×'; x.title = 'Sekmeyi kapat';
-      x.onclick = function (e) { e.stopPropagation(); ipc({ cmd: 'close_tab', id: t.id }); };
-      el.appendChild(x);
-      el.onclick = function () { ipc({ cmd: 'switch', id: t.id }); };
-      el.onauxclick = function (e) { if (e.button === 1) ipc({ cmd: 'close_tab', id: t.id }); };
-      box.appendChild(el);
-    });
-    var nt = document.createElement('button');
-    nt.id = 'newtab'; nt.textContent = '+'; nt.title = 'Yeni sekme (Ctrl+T)';
-    nt.onclick = function () { ipc({ cmd: 'new_tab' }); };
-    box.appendChild(nt);
-
+    syncTabs();
     var cur = S.tabs.filter(function (t) { return t.id === S.active; })[0];
-    if (cur && document.activeElement !== $('omni')) {
-      $('omni').value = cur.url === 'ozi://newtab' ? '' : cur.url;
+    if (cur) {
+      if (document.activeElement !== $('omni')) {
+        $('omni').value = cur.url === 'ozi://newtab' ? '' : cur.url;
+      }
+      updateSecurity(cur.url);
+      $('omniwrap').classList.toggle('private', !!cur.private);
+      $('progress').classList.toggle('on', !!cur.loading);
+      $('progress').classList.toggle('private', !!cur.private);
+      var rl = $('reload');
+      var wantStop = !!cur.loading;
+      if (rl._stop !== wantStop) {
+        rl._stop = wantStop;
+        rl.innerHTML = icon(wantStop ? 'i-x' : 'i-reload');
+        rl.title = wantStop ? 'Durdur' : 'Yenile (Ctrl+R)';
+      }
     }
-    $('star').textContent = S.bookmarked ? '★' : '☆';
-    $('star').className = 'nb' + (S.bookmarked ? ' on' : '');
+    var st = $('star');
+    st.className = 'nb' + (S.bookmarked ? ' on' : '');
+    if (S.bookmarked && !wasBookmarked) { st.classList.add('pop'); setTimeout(function () { st.classList.remove('pop'); }, 450); }
+    wasBookmarked = S.bookmarked;
     $('find').className = S.find ? 'open' : '';
     var ex = $('exts');
     ex.textContent = '';
@@ -107,56 +280,85 @@
       b.className = 'nb'; b.title = e.name;
       if (e.icon) { var i = document.createElement('img'); i.src = e.icon; i.onerror = function () { b.textContent = e.name[0] || '?'; i.remove(); }; b.appendChild(i); }
       else b.textContent = (e.name || '?')[0];
-      b.onclick = function () { ipc({ cmd: 'ext_click', id: e.id }); };
+      b.onclick = function () { post({ cmd: 'ext_click', id: e.id }); };
       ex.appendChild(b);
     });
   }
 
   window.oziUi = {
     state: function (s) { var open = S.find; S = s; render(); if (S.find && !open) { $('fq').focus(); $('fq').select(); } },
-    focusOmni: function () { $('omni').focus(); $('omni').select(); }
+    focusOmni: function () { $('omni').focus(); $('omni').select(); },
+    // Satır içi tamamlama: yazılan metin bir ziyaret edilen adresin başıysa kalanını seçili ekle
+    suggest: function (q, list) {
+      var o = $('omni');
+      if (o.value !== q || document.activeElement !== o) return;
+      for (var i = 0; i < list.length; i++) {
+        var u = list[i].url;
+        if (!/^https:\/\/|^http:\/\/localhost/.test(u)) continue;
+        var d = u.replace(/^https?:\/\//, '').replace(/^www\./, '');
+        if (d.length > q.length && d.toLowerCase().indexOf(q.toLowerCase()) === 0) {
+          o.value = q + d.slice(q.length);
+          o.setSelectionRange(q.length, o.value.length);
+          break;
+        }
+      }
+      updateChip();
+    }
   };
 
   $('omni').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { go(this.value); this.blur(); }
     else if (e.key === 'Escape') { this.blur(); render(); }
   });
-  $('omni').addEventListener('focus', function () { this.select(); });
-  $('back').onclick = function () { ipc({ cmd: 'back' }); };
-  $('fwd').onclick = function () { ipc({ cmd: 'forward' }); };
-  $('reload').onclick = function () { ipc({ cmd: 'reload' }); };
-  $('star').onclick = function () { ipc({ cmd: 'bookmark' }); };
+  $('omni').addEventListener('input', function (e) {
+    updateChip();
+    var q = this.value;
+    var deleting = e.inputType && e.inputType.indexOf('delete') === 0;
+    if (!deleting && q && !/\s/.test(q)) post({ cmd: 'suggest', q: q });
+  });
+  $('omni').addEventListener('focus', function () { this.select(); updateChip(); });
+  $('omni').addEventListener('blur', function () { $('chip').classList.remove('show'); });
+  $('back').onclick = function () { post({ cmd: 'back' }); };
+  $('fwd').onclick = function () { post({ cmd: 'forward' }); };
+  $('reload').onclick = function () {
+    var b = this;
+    if (b._stop) { post({ cmd: 'stop' }); return; }
+    b.classList.remove('spinning'); void b.offsetWidth; b.classList.add('spinning');
+    post({ cmd: 'reload' });
+  };
+  $('star').onclick = function () { post({ cmd: 'bookmark' }); };
   $('hist').onclick = function () { go('ozi://history'); };
   $('bms').onclick = function () { go('ozi://bookmarks'); };
   $('dls').onclick = function () { go('ozi://downloads'); };
   $('extpage').onclick = function () { go('ozi://extensions'); };
   $('setpage').onclick = function () { go('ozi://settings'); };
 
-  $('fq').addEventListener('input', function () { ipc({ cmd: 'find', q: this.value, back: false, fresh: true }); });
+  $('fq').addEventListener('input', function () { post({ cmd: 'find', q: this.value, back: false, fresh: true }); });
   $('fq').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') ipc({ cmd: 'find', q: this.value, back: e.shiftKey });
-    else if (e.key === 'Escape') ipc({ cmd: 'find_toggle' });
+    if (e.key === 'Enter') post({ cmd: 'find', q: this.value, back: e.shiftKey });
+    else if (e.key === 'Escape') post({ cmd: 'find_toggle' });
   });
-  $('fnext').onclick = function () { ipc({ cmd: 'find', q: $('fq').value, back: false }); };
-  $('fprev').onclick = function () { ipc({ cmd: 'find', q: $('fq').value, back: true }); };
-  $('fclose').onclick = function () { ipc({ cmd: 'find_toggle' }); };
+  $('fnext').onclick = function () { post({ cmd: 'find', q: $('fq').value, back: false }); };
+  $('fprev').onclick = function () { post({ cmd: 'find', q: $('fq').value, back: true }); };
+  $('fclose').onclick = function () { post({ cmd: 'find_toggle' }); };
 
-  // Yedek kısayollar (Linux'ta Rust pencere düzeyinde de yakalar; Windows'ta yalnızca bunlar).
+  // Yedek kısayollar (Linux'ta Rust pencere düzeyinde de yakalar).
   document.addEventListener('keydown', function (e) {
     var c = e.ctrlKey || e.metaKey;
     var k = e.key.toLowerCase();
-    if (c && e.shiftKey && k === 'n') { e.preventDefault(); ipc({ cmd: 'private_tab' }); }
-    else if (c && k === 't') { e.preventDefault(); ipc({ cmd: 'new_tab' }); }
-    else if (c && k === 'w') { e.preventDefault(); ipc({ cmd: 'close_tab', id: S.active }); }
+    if (c && e.shiftKey && k === 'n') { e.preventDefault(); post({ cmd: 'private_tab' }); }
+    else if (c && k === 't') { e.preventDefault(); post({ cmd: 'new_tab' }); }
+    else if (c && k === 'w') { e.preventDefault(); post({ cmd: 'close_tab', id: S.active }); }
     else if (c && k === 'l') { e.preventDefault(); window.oziUi.focusOmni(); }
-    else if (c && k === 'd') { e.preventDefault(); ipc({ cmd: 'bookmark' }); }
-    else if (c && k === 'f') { e.preventDefault(); ipc({ cmd: 'find_toggle' }); }
+    else if (c && k === 'd') { e.preventDefault(); post({ cmd: 'bookmark' }); }
+    else if (c && k === 'f') { e.preventDefault(); post({ cmd: 'find_toggle' }); }
     else if (c && k === 'h') { e.preventDefault(); go('ozi://history'); }
     else if (c && k === 'j') { e.preventDefault(); go('ozi://downloads'); }
-    else if ((c && k === 'r') || e.key === 'F5') { e.preventDefault(); ipc({ cmd: 'reload' }); }
-    else if (e.altKey && e.key === 'ArrowLeft') ipc({ cmd: 'back' });
-    else if (e.altKey && e.key === 'ArrowRight') ipc({ cmd: 'forward' });
+    else if ((c && k === 'r') || e.key === 'F5') { e.preventDefault(); post({ cmd: 'reload' }); }
+    else if (e.altKey && e.key === 'ArrowLeft') post({ cmd: 'back' });
+    else if (e.altKey && e.key === 'ArrowRight') post({ cmd: 'forward' });
   });
-  ipc({ cmd: 'ready' });
+  syncTabs();
+  post({ cmd: 'ready' });
 </script>
 </html>

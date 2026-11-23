@@ -167,6 +167,48 @@ impl UserData {
         out
     }
 
+    /// Yeni sekme sayfası kısayolları: önce yer imleri, sonra en çok ziyaret edilen siteler.
+    /// Alan adı başına tek kayıt; `(url, başlık, alan adı)`.
+    pub fn top_sites(&self, limit: usize) -> Vec<(String, String, String)> {
+        fn host(url: &str) -> String {
+            url::Url::parse(url)
+                .ok()
+                .and_then(|u| u.host_str().map(|h| h.trim_start_matches("www.").to_string()))
+                .unwrap_or_default()
+        }
+        let mut out: Vec<(String, String, String)> = vec![];
+        let mut seen = std::collections::HashSet::new();
+        for b in &self.bookmarks {
+            let h = host(&b.url);
+            if !h.is_empty() && seen.insert(h.clone()) {
+                out.push((b.url.clone(), b.title.clone(), h));
+            }
+        }
+        // Alan adı başına toplam ziyaret; temsilci = o alan adındaki en çok ziyaret edilen sayfa
+        let mut by_host: std::collections::HashMap<String, (u32, &HistoryEntry, u32)> = Default::default();
+        for e in &self.history {
+            let h = host(&e.url);
+            if h.is_empty() {
+                continue;
+            }
+            let slot = by_host.entry(h).or_insert((0, e, 0));
+            slot.0 = slot.0.saturating_add(e.visits);
+            if e.visits > slot.2 {
+                slot.1 = e;
+                slot.2 = e.visits;
+            }
+        }
+        let mut hosts: Vec<(String, u32, &HistoryEntry)> = by_host.into_iter().map(|(h, (t, e, _))| (h, t, e)).collect();
+        hosts.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.last.cmp(&a.2.last)));
+        for (h, _, e) in hosts {
+            if seen.insert(h.clone()) {
+                out.push((e.url.clone(), e.title.clone(), h));
+            }
+        }
+        out.truncate(limit);
+        out
+    }
+
     /// Bekleyen geçmiş değişikliklerini diske yazar.
     pub fn flush(&mut self) {
         if self.dirty_history {
@@ -259,6 +301,23 @@ mod tests {
         assert_eq!(s[1].0, "https://rust-lang.org/");
         assert_eq!(s.len(), 3);
         assert!(u.suggest("  ", 5).is_empty());
+    }
+
+    #[test]
+    fn top_sites_bookmarks_first_one_per_host() {
+        let mut u = UserData::default();
+        u.add_visit("https://news.com/a", "A", 1);
+        u.add_visit("https://news.com/b", "B", 2);
+        u.add_visit("https://news.com/b", "B", 3);
+        u.add_visit("https://www.shop.com/", "Shop", 4);
+        u.add_visit("https://blog.dev/", "Blog", 5);
+        u.bookmarks.push(Bookmark { url: "https://shop.com/cart".into(), title: "Cart".into(), added: 0 });
+        let t = u.top_sites(10);
+        assert_eq!(t[0].2, "shop.com", "yer imi önce, www kırpılır");
+        assert_eq!(t[1].2, "news.com", "en çok ziyaret edilen alan adı ikinci");
+        assert_eq!(t[1].0, "https://news.com/b", "temsilci en çok ziyaret edilen sayfa");
+        assert_eq!(t.len(), 3);
+        assert_eq!(u.top_sites(2).len(), 2);
     }
 
     #[test]

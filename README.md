@@ -7,6 +7,7 @@ Linux'ta WebKitGTK, Windows'ta WebView2 üzerinde çalışır; arayüz, sekmeler
 - **Uzantılar:** `.crx`, `.xpi`, `.zip` ya da açılmış klasör. Ayrıntılar aşağıda.
 - **Reklam/izleyici engelleme (Linux):** yerleşik alan adı listesi + uzantıların `declarativeNetRequest` statik kuralları, WebKit içerik filtresi olarak uygulanır.
 - **Geçmiş, yer imleri, indirmeler, gizli sekme, sayfada ara, ayarlar** (arama motorlarını düzenleme dahil).
+- **Arayüz:** açık/koyu tema (sistemi izler), sekme açılış/kapanış animasyonları, favicon'lar, yükleme çubuğu, adres çubuğunda satır içi tamamlama ve "hangi motorla aranacak" çipi, hareketli yeni sekme sayfası (saat, en çok ziyaret edilen siteler). `prefers-reduced-motion` açıksa animasyonlar kapanır.
 - **Küçük ve hızlı açılış:** Electron/Chromium gömmez; sistemin web motorunu kullanır. Release profili `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip`.
 - **Windows:** imzasız `.exe` (GitHub Actions ile derlenir). SmartScreen uyarısı normaldir.
 
@@ -106,7 +107,7 @@ Her sekme ayrı bir webview'dur; üstteki arayüz çubuğu da (HTML) ayrı bir w
 - **Alt çerçeveler.** `window.ipc` yalnızca ana çerçevede vardır; `all_frames` içerik betikleri çalışır ama arka plana mesaj gönderemez.
 - **Gizli sekme:** çerez/önbellek kalıcı değildir, geçmişe yazılmaz ve uzantılar çalışmaz. Reklam engelleme gizli sekmede de geçerlidir.
 - **Reklam engelleme yalnızca Linux'ta.** Windows'ta (WebView2) istek filtreleme henüz yok; yerleşik liste ve `declarativeNetRequest` orada uygulanmaz. Yerleşik liste yalnızca *üçüncü taraf* isteklerini engeller ve kısa bir listedir; uBlock gibi kapsamlı filtre listeleri değildir. YouTube gibi sitelerin kendi reklamları engellenmez.
-- **Henüz yok:** adres çubuğu açılır önerileri, senkronizasyon, parola yöneticisi, yazdırma arayüzü, istek *değiştirme*. Test kapsamı: çekirdek mantık birim testleriyle; uçtan uca uzantı akışı, reklam engelleme (yerel sunucuyla), geçmiş ve gizli mod Linux'ta elle doğrulandı. Kısayol tuşları ve arayüz düğmeleri elle gözden geçirilmedi. **Windows derlemesi yalnızca CI'da derlenir, elle denenmemiştir.**
+- **Henüz yok:** adres çubuğu açılır öneri listesi, senkronizasyon, parola yöneticisi, yazdırma arayüzü, istek *değiştirme*. Test kapsamı: çekirdek mantık birim testleriyle; uçtan uca uzantı akışı, reklam engelleme (yerel sunucuyla), geçmiş ve gizli mod Linux'ta elle doğrulandı. Kısayol tuşları ve arayüz düğmeleri elle gözden geçirilmedi. **Windows derlemesi yalnızca CI'da derlenir, elle denenmemiştir.**
 - Eşleşmeyen bir uzantı API'si çağrıldığında sessizce no-op döner; bu uyumluluğu artırır ama hataları gizleyebilir.
 
 ## "Kendi motorum" sorusu
@@ -116,7 +117,7 @@ Sıfırdan bir web motoru (HTML/CSS/JS, ağ, güvenlik) yıllarca süren bir iş
 ## Yol haritası
 
 - [ ] Windows'ta istek filtreleme (WebView2 `WebResourceRequested`)
-- [ ] Adres çubuğu açılır önerileri (geçmiş + yer imleri; çekirdekte `suggest` hazır)
+- [ ] Adres çubuğu açılır öneri listesi (satır içi tamamlama var; liste için üst katman webview gerekir)
 - [ ] Dinamik `declarativeNetRequest` kuralları ve `redirect`
 - [ ] Alt çerçeveler için uzantı mesajlaşması (wry'nin `window.ipc`'si yalnızca ana çerçevede)
 - [ ] Yer imi klasörleri / yer imi çubuğu
