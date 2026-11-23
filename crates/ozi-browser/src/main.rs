@@ -477,10 +477,9 @@ impl App {
             return;
         }
         let Some(rid) = rid else { return };
-        if let Some(res) = self.run_op(&src, &ext_id, level, &op, args) {
+        // `None` = yanıt ertelendi (mesaj iletimi); `__resp` geldiğinde `rid` ile cevaplanır.
+        if let Some(res) = self.run_op(&src, &ext_id, level, &op, rid, args) {
             self.reply(&src, rid, res);
-        } else if let Some(p) = self.pending.values_mut().find(|p| p.origin == src && p.rid == 0) {
-            p.rid = rid; // ertelenmiş (mesaj iletimi): rid şimdi biliniyor
         }
     }
 
@@ -509,6 +508,7 @@ impl App {
     fn forward(
         &mut self,
         origin: &Src,
+        rid: u64,
         target: Src,
         ext_id: &str,
         msg: Value,
@@ -521,7 +521,7 @@ impl App {
             self.pending.clear();
         }
         let token = ext::rand_hex()[..16].to_string();
-        self.pending.insert(token.clone(), Pending { origin: origin.clone(), rid: 0, target: target.clone() });
+        self.pending.insert(token.clone(), Pending { origin: origin.clone(), rid, target: target.clone() });
         self.eval_in(&target, "dispatch", &[json!(ext_id), msg, sender, json!(token)]);
         None
     }
@@ -545,7 +545,7 @@ impl App {
         }
     }
 
-    fn run_op(&mut self, src: &Src, ext_id: &str, level: Level, op: &str, args: Vec<Value>) -> Option<Result<Value, String>> {
+    fn run_op(&mut self, src: &Src, ext_id: &str, level: Level, op: &str, rid: u64, args: Vec<Value>) -> Option<Result<Value, String>> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Null);
 
         if let Some(rest) = op.strip_prefix("storage.") {
@@ -582,7 +582,7 @@ impl App {
                 if matches!(src, Src::Bg(_)) {
                     return Some(Err(NO_RECEIVER.into()));
                 }
-                self.forward(src, Src::Bg(ext_id.to_string()), ext_id, arg(0), sender)
+                self.forward(src, rid, Src::Bg(ext_id.to_string()), ext_id, arg(0), sender)
             }
             _ if level != Level::Priv => Some(Err(format!("'{op}' bu bağlamda kullanılamaz"))),
             "runtime.openOptionsPage" => {
@@ -672,7 +672,7 @@ impl App {
             "tabs.sendMessage" => {
                 let Some(tab_id) = arg(0).as_u64() else { return Some(Err("geçersiz tabId".into())) };
                 let sender = self.sender_for(src, ext_id);
-                self.forward(src, Src::Tab(tab_id), ext_id, arg(1), sender)
+                self.forward(src, rid, Src::Tab(tab_id), ext_id, arg(1), sender)
             }
             "tabs.executeScript" | "scripting.executeScript" | "tabs.insertCSS" | "scripting.insertCSS" => {
                 Some(self.inject(ext_id, op, &args))
