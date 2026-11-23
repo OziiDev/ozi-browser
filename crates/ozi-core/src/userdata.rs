@@ -59,7 +59,8 @@ impl UserData {
     }
 
     fn write<T: Serialize>(&self, name: &str, v: &T) {
-        if std::fs::create_dir_all(&self.dir).is_err() {
+        // Dizinsiz (yalnızca bellekte) örnek diske yazmaz.
+        if self.dir.as_os_str().is_empty() || std::fs::create_dir_all(&self.dir).is_err() {
             return;
         }
         let tmp = self.dir.join(format!("{name}.tmp"));
