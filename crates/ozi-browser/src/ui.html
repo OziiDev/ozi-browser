@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="tr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ozi UI</title>
+<style>
+  :root {
+    --bg: #1b1c21; --bar: #25262d; --tab: #2c2d35; --tab-active: #3a3b46; --fg: #e8e9ee;
+    --muted: #9b9dab; --accent: #ff7a2f; --input: #14151a; --border: #34353f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #dfe1e8; --bar: #f4f5f9; --tab: #e6e8ef; --tab-active: #ffffff; --fg: #1d1e24;
+      --muted: #6a6c7a; --input: #e9ebf2; --border: #d0d3dd; }
+  }
+  * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
+    font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #tabs { display: flex; align-items: flex-end; height: 38px; padding: 6px 8px 0; gap: 2px; }
+  .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 220px;
+    height: 32px; padding: 0 8px 0 12px; border-radius: 9px 9px 0 0; background: var(--tab); color: var(--muted); cursor: default; }
+  .tab.active { background: var(--bar); color: var(--fg); }
+  .tab .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tab .x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: none; color: inherit; cursor: pointer; line-height: 18px; }
+  .tab .x:hover { background: rgba(127,127,127,.3); }
+  .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); border-top-color: var(--accent);
+    animation: sp .7s linear infinite; flex: none; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  #newtab { margin: 0 0 4px 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
+  #newtab:hover, .nb:hover { background: rgba(127,127,127,.25); }
+  #bar { display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
+  .nb { width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 16px; cursor: pointer; flex: none;
+    display: grid; place-items: center; }
+  .nb img { width: 18px; height: 18px; object-fit: contain; }
+  #omni { flex: 1; height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 16px; outline: none;
+    background: var(--input); color: var(--fg); font-size: 14px; user-select: text; -webkit-user-select: text; }
+  #omni:focus { border-color: var(--accent); }
+  #exts { display: flex; gap: 2px; }
+</style>
+<body>
+  <div id="tabs"></div>
+  <div id="bar">
+    <button class="nb" id="back" title="Geri (Alt+←)">←</button>
+    <button class="nb" id="fwd" title="İleri (Alt+→)">→</button>
+    <button class="nb" id="reload" title="Yenile (Ctrl+R)">⟳</button>
+    <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="DuckDuckGo'da ara ya da adres yaz  ·  g sorgu → Google">
+    <div id="exts"></div>
+    <button class="nb" id="extpage" title="Uzantılar">🧩</button>
+  </div>
+<script>
+  var S = { tabs: [], active: 0, exts: [] };
+  var $ = function (id) { return document.getElementById(id); };
+  function ipc(o) { window.ipc.postMessage(JSON.stringify(o)); }
+
+  function render() {
+    var box = $('tabs');
+    box.textContent = '';
+    S.tabs.forEach(function (t) {
+      var el = document.createElement('div');
+      el.className = 'tab' + (t.id === S.active ? ' active' : '');
+      if (t.loading) { var sp = document.createElement('span'); sp.className = 'spin'; el.appendChild(sp); }
+      var title = document.createElement('span');
+      title.className = 't';
+      title.textContent = t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : t.url) || 'Yeni sekme';
+      el.appendChild(title);
+      var x = document.createElement('button');
+      x.className = 'x'; x.textContent = '×'; x.title = 'Sekmeyi kapat';
+      x.onclick = function (e) { e.stopPropagation(); ipc({ cmd: 'close_tab', id: t.id }); };
+      el.appendChild(x);
+      el.onclick = function () { ipc({ cmd: 'switch', id: t.id }); };
+      el.onauxclick = function (e) { if (e.button === 1) ipc({ cmd: 'close_tab', id: t.id }); };
+      box.appendChild(el);
+    });
+    var nt = document.createElement('button');
+    nt.id = 'newtab'; nt.textContent = '+'; nt.title = 'Yeni sekme (Ctrl+T)';
+    nt.onclick = function () { ipc({ cmd: 'new_tab' }); };
+    box.appendChild(nt);
+
+    var cur = S.tabs.filter(function (t) { return t.id === S.active; })[0];
+    if (cur && document.activeElement !== $('omni')) {
+      $('omni').value = cur.url === 'ozi://newtab' ? '' : cur.url;
+    }
+    var ex = $('exts');
+    ex.textContent = '';
+    S.exts.forEach(function (e) {
+      var b = document.createElement('button');
+      b.className = 'nb'; b.title = e.name;
+      if (e.icon) { var i = document.createElement('img'); i.src = e.icon; i.onerror = function () { b.textContent = e.name[0] || '?'; i.remove(); }; b.appendChild(i); }
+      else b.textContent = (e.name || '?')[0];
+      b.onclick = function () { ipc({ cmd: 'ext_click', id: e.id }); };
+      ex.appendChild(b);
+    });
+  }
+
+  window.oziUi = { state: function (s) { S = s; render(); }, focusOmni: function () { $('omni').focus(); $('omni').select(); } };
+
+  $('omni').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { ipc({ cmd: 'go', input: this.value }); this.blur(); }
+    else if (e.key === 'Escape') { this.blur(); render(); }
+  });
+  $('omni').addEventListener('focus', function () { this.select(); });
+  $('back').onclick = function () { ipc({ cmd: 'back' }); };
+  $('fwd').onclick = function () { ipc({ cmd: 'forward' }); };
+  $('reload').onclick = function () { ipc({ cmd: 'reload' }); };
+  $('extpage').onclick = function () { ipc({ cmd: 'go', input: 'ozi://extensions' }); };
+
+  document.addEventListener('keydown', function (e) {
+    var c = e.ctrlKey || e.metaKey;
+    if (c && e.key === 't') { e.preventDefault(); ipc({ cmd: 'new_tab' }); }
+    else if (c && e.key === 'w') { e.preventDefault(); ipc({ cmd: 'close_tab', id: S.active }); }
+    else if (c && e.key === 'l') { e.preventDefault(); window.oziUi.focusOmni(); }
+    else if ((c && e.key === 'r') || e.key === 'F5') { e.preventDefault(); ipc({ cmd: 'reload' }); }
+    else if (e.altKey && e.key === 'ArrowLeft') ipc({ cmd: 'back' });
+    else if (e.altKey && e.key === 'ArrowRight') ipc({ cmd: 'forward' });
+  });
+  ipc({ cmd: 'ready' });
+</script>
+</html>

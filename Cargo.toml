@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/ozi-core", "crates/ozi-browser"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["OziiDev"]
+
+# "En hızlı" hedefi: küçük, agresif optimize edilmiş ikili.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
