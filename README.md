@@ -5,6 +5,8 @@ Linux'ta WebKitGTK, Windows'ta WebView2 üzerinde çalışır; arayüz, sekmeler
 
 - **Arama:** varsayılan **DuckDuckGo**, ikinci sırada **Google**. Adres çubuğunda `g kelime` → Google, `d kelime` → DuckDuckGo, `b` → Brave, `bing` → Bing.
 - **Uzantılar:** `.crx`, `.xpi`, `.zip` ya da açılmış klasör. Ayrıntılar aşağıda.
+- **Reklam/izleyici engelleme (Linux):** yerleşik alan adı listesi + uzantıların `declarativeNetRequest` statik kuralları, WebKit içerik filtresi olarak uygulanır.
+- **Geçmiş, yer imleri, indirmeler, gizli sekme, sayfada ara, ayarlar** (arama motorlarını düzenleme dahil).
 - **Küçük ve hızlı açılış:** Electron/Chromium gömmez; sistemin web motorunu kullanır. Release profili `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip`.
 - **Windows:** imzasız `.exe` (GitHub Actions ile derlenir). SmartScreen uyarısı normaldir.
 
@@ -33,14 +35,26 @@ Kaynaktan derlemek için: `cargo build --release`.
 
 ```bash
 ozi-browser                                  # yeni sekme sayfası
+ozi-browser --private https://example.com   # gizli sekmede aç
 ozi-browser https://example.com "rust dili"  # URL'ler ve aramalar sekme olarak açılır
 ozi-browser --install ./uzanti-klasoru.xpi   # uzantı kur, sonra aç
 ```
 
-Kısayollar (arayüz çubuğuna odaklıyken): `Ctrl+T` yeni sekme, `Ctrl+W` kapat, `Ctrl+L` adres çubuğu, `Ctrl+R`/`F5` yenile, `Alt+←/→` geri/ileri.
-Sayfadayken `Ctrl +/-` yakınlaştırma çalışır. Uzantı yönetimi: `ozi://extensions` (🧩 düğmesi).
+Kısayollar (Linux'ta sayfa odaktayken de çalışır; Windows'ta yalnızca arayüz çubuğuna odaklıyken):
 
-Veriler: Linux `~/.local/share/ozi-browser` (profil, uzantılar, uzantı depolaması) ve `~/.config/ozi-browser/settings.json` (arama motorları sırası, ana sayfa). Windows'ta `%LOCALAPPDATA%` ve `%APPDATA%`.
+| Tuş | İşlev | Tuş | İşlev |
+|---|---|---|---|
+| `Ctrl+T` | yeni sekme | `Ctrl+Shift+N` | gizli sekme |
+| `Ctrl+W` | sekmeyi kapat | `Ctrl+Tab` / `Ctrl+Shift+Tab` | sonraki / önceki sekme |
+| `Ctrl+1…8`, `Ctrl+9` | n. sekme / son sekme | `Ctrl+L` | adres çubuğu |
+| `Ctrl+R`, `F5` | yenile | `Alt+←/→` | geri / ileri |
+| `Ctrl+D` | yer imi ekle/kaldır | `Ctrl+F` | sayfada ara (`Enter`/`Shift+Enter`, `Esc`) |
+| `Ctrl+H` | geçmiş | `Ctrl+J` | indirmeler |
+| `F11` | tam ekran | `F12` | geliştirici araçları |
+
+`Ctrl +/-` yakınlaştırma sayfa tarafından yönetilir. İç sayfalar: `ozi://history`, `bookmarks`, `downloads`, `extensions`, `settings`.
+
+Veriler: Linux `~/.local/share/ozi-browser` (profil, uzantılar, geçmiş/yer imleri/indirmeler, uzantı depolaması) ve `~/.config/ozi-browser/settings.json` (arama motorları, ana sayfa, reklam engelleme). Windows'ta `%LOCALAPPDATA%` ve `%APPDATA%`.
 
 ## Uzantı desteği
 
@@ -55,9 +69,10 @@ Veriler: Linux `~/.local/share/ozi-browser` (profil, uzantılar, uzantı depolam
 | `tabs.query/get/create/update/remove/reload/sendMessage/executeScript`, `scripting.executeScript/insertCSS` | ✅ (temel) |
 | `i18n` (`_locales`, `__MSG_*__`), `alarms`, `action/browserAction` (popup, `onClicked`) | ✅ |
 | `chrome.*` (callback) ve `browser.*` (Promise) biçimlerinin ikisi de | ✅ |
-| `webRequest`, `declarativeNetRequest`, `contextMenus`, `cookies`, `notifications`, `runtime.connect` portları | ⚠️ taslak: çökmez ama **işlevsizdir** |
+| `declarativeNetRequest` statik kural dosyaları (`block`, `allow`, `upgradeScheme`; `urlFilter`, `resourceTypes`, `domainType`, `initiatorDomains`) | ✅ Linux (WebKit içerik filtresi). `redirect`, `modifyHeaders`, dinamik kurallar, `requestDomains`: ❌ |
+| `webRequest`, `contextMenus`, `cookies`, `notifications`, `runtime.connect` portları | ⚠️ taslak: çökmez ama **işlevsizdir** |
 
-Bu yüzden reklam engelleyiciler (uBlock Origin, AdGuard…) ve ağ isteğini değiştiren uzantılar **henüz çalışmaz**; betik enjekte eden, mesajlaşan, depolama kullanan uzantılar çalışır.
+MV3 tarzı, statik kurallı engelleyiciler (uBlock Origin Lite, AdGuard MV3 gibi) kurallarının desteklenen kısmıyla çalışabilir; `webRequest` ile engelleyen eski MV2 uzantılar (uBlock Origin) **çalışmaz**. Betik enjekte eden, mesajlaşan, depolama kullanan uzantılar çalışır.
 
 ## Mimari
 
@@ -70,13 +85,17 @@ crates/
     store.rs      uzantı kurulumu (klasör/zip/xpi/crx), etkin/devre dışı durumu
     extension.rs  güvenli dosya okuma, _locales
     storage.rs    chrome.storage deposu
+    userdata.rs   geçmiş, yer imleri, indirme kayıtları
+    blocklist.rs  yerleşik liste + declarativeNetRequest -> WebKit kuralları
     settings.rs   ayarlar ve disk konumları
   ozi-browser/  uygulama
     main.rs       pencere, sekmeler, IPC, uzantı işlemleri
     ext.rs        enjeksiyon betikleri, arka plan sayfası, ozi-ext:// sunucusu
     ext_shim.js   chrome.* / browser.* API şimi
+    blocking.rs   WebKit içerik filtresi (FFI, Linux)
+    keys.rs       pencere düzeyinde kısayollar (Linux)
     ui.html       sekme + adres çubuğu arayüzü
-    pages.rs      ozi://newtab, ozi://extensions
+    pages.rs      ozi:// iç sayfaları (yeni sekme, uzantılar, geçmiş, yer imleri, indirmeler, ayarlar)
 ```
 
 Her sekme ayrı bir webview'dur; üstteki arayüz çubuğu da (HTML) ayrı bir webview'dur ve Rust ile IPC üzerinden konuşur.
@@ -85,7 +104,9 @@ Her sekme ayrı bir webview'dur; üstteki arayüz çubuğu da (HTML) ayrı bir w
 
 - **Sayfa dünyasında içerik betikleri.** wry izole JavaScript dünyası sunmadığı için içerik betikleri sayfanın kendi JS ortamında çalışır (Chrome'da ayrı bir "isolated world"dür). Bunu hafifletmek için uzantı API'si kalıcı bir global'de tutulmaz; Rust↔sayfa iletişimi webview başına rastgele nonce ve rastgele adlı giriş noktasıyla yapılır; ayrıcalıklı işlemler (`tabs.*` vb.) yalnızca uzantının kendi sayfası/arka planı için açılır. Ancak sayfa betiği, `Array`/`Promise` gibi yerleşikleri değiştirerek içerik betiğine müdahale edebilir. Güvenmediğiniz sitelerde parola yöneticisi gibi hassas uzantılar kullanmayın.
 - **Alt çerçeveler.** `window.ipc` yalnızca ana çerçevede vardır; `all_frames` içerik betikleri çalışır ama arka plana mesaj gönderemez.
-- **Henüz yok:** geçmiş, yer imleri, parola yöneticisi, gizli sekme, kısayolların sayfa odaklıyken çalışması, istek engelleme. Test kapsamı: çekirdek mantık birim testleriyle, uçtan uca uzantı akışı (içerik betiği → arka plan → depolama) Linux'ta elle doğrulandı. **Windows derlemesi yalnızca CI'da derlenir, elle denenmemiştir.**
+- **Gizli sekme:** çerez/önbellek kalıcı değildir, geçmişe yazılmaz ve uzantılar çalışmaz. Reklam engelleme gizli sekmede de geçerlidir.
+- **Reklam engelleme yalnızca Linux'ta.** Windows'ta (WebView2) istek filtreleme henüz yok; yerleşik liste ve `declarativeNetRequest` orada uygulanmaz. Yerleşik liste yalnızca *üçüncü taraf* isteklerini engeller ve kısa bir listedir; uBlock gibi kapsamlı filtre listeleri değildir. YouTube gibi sitelerin kendi reklamları engellenmez.
+- **Henüz yok:** adres çubuğu açılır önerileri, senkronizasyon, parola yöneticisi, yazdırma arayüzü, istek *değiştirme*. Test kapsamı: çekirdek mantık birim testleriyle; uçtan uca uzantı akışı, reklam engelleme (yerel sunucuyla), geçmiş ve gizli mod Linux'ta elle doğrulandı. Kısayol tuşları ve arayüz düğmeleri elle gözden geçirilmedi. **Windows derlemesi yalnızca CI'da derlenir, elle denenmemiştir.**
 - Eşleşmeyen bir uzantı API'si çağrıldığında sessizce no-op döner; bu uyumluluğu artırır ama hataları gizleyebilir.
 
 ## "Kendi motorum" sorusu
@@ -94,11 +115,11 @@ Sıfırdan bir web motoru (HTML/CSS/JS, ağ, güvenlik) yıllarca süren bir iş
 
 ## Yol haritası
 
-- [ ] `declarativeNetRequest` (MV3 reklam engelleme) için istek filtreleme katmanı
-- [ ] Geçmiş, yer imleri, indirme yöneticisi arayüzü
-- [ ] Tuş kısayollarının sayfa odaklıyken çalışması (uygulama menüsü/hızlandırıcılar)
-- [ ] Arama motorlarını arayüzden düzenleme
-- [ ] Alt çerçeveler için uzantı mesajlaşması
+- [ ] Windows'ta istek filtreleme (WebView2 `WebResourceRequested`)
+- [ ] Adres çubuğu açılır önerileri (geçmiş + yer imleri; çekirdekte `suggest` hazır)
+- [ ] Dinamik `declarativeNetRequest` kuralları ve `redirect`
+- [ ] Alt çerçeveler için uzantı mesajlaşması (wry'nin `window.ipc`'si yalnızca ana çerçevede)
+- [ ] Yer imi klasörleri / yer imi çubuğu
 - [ ] İsteğe bağlı Servo arka ucu
 
 ## Lisans

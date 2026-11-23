@@ -5,7 +5,9 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod blocking;
 mod ext;
+mod keys;
 mod pages;
 
 use ext::{ext_url, WebCtx, BACKGROUND_PAGE};
@@ -16,11 +18,12 @@ use ozi_core::{
     settings::{Paths, Settings},
     storage::ExtStorage,
     store::ExtensionStore,
+    userdata::UserData,
 };
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tao::{
     dpi::{LogicalSize, PhysicalSize},
     event::{Event, WindowEvent},
@@ -29,8 +32,9 @@ use tao::{
 };
 use wry::{NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
 
-/// Üstteki arayüz çubuğunun (sekmeler + adres) mantıksal yüksekliği.
-const UI_H: f64 = 86.0;
+/// Üstteki arayüz çubuğunun (sekmeler + adres) mantıksal yüksekliği; sayfada ara çubuğu +40.
+const UI_BASE_H: f64 = 86.0;
+const FIND_H: f64 = 40.0;
 const NO_RECEIVER: &str = "Could not establish connection. Receiving end does not exist.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +51,10 @@ enum UserEvent {
     Load(u64, bool, String),
     NewTab(String),
     BgLoaded(String),
+    DownloadStart(String, String),
+    DownloadDone(String, Option<String>, bool),
+    Shortcut(keys::Action),
+    FilterReady(Option<usize>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -64,6 +72,7 @@ struct Tab {
     url: String,
     title: String,
     loading: bool,
+    private: bool,
 }
 
 struct Bg {
@@ -111,18 +120,20 @@ fn protocols_needed(_: &WebContext) -> bool {
     true
 }
 
-fn with_protocols<'a>(
-    b: WebViewBuilder<'a>,
-    need: bool,
-    map: &ext::ExtMap,
-    settings: &pages::SettingsRef,
-) -> WebViewBuilder<'a> {
+fn with_protocols<'a>(b: WebViewBuilder<'a>, need: bool, pages_ctx: &pages::PageCtx) -> WebViewBuilder<'a> {
     if !need {
         return b;
     }
-    let (m1, s1, m2) = (map.clone(), settings.clone(), map.clone());
-    b.with_custom_protocol("ozi".into(), move |_, req| pages::serve(&m1, &s1, &req))
+    let (c1, m2) = (pages_ctx.clone(), pages_ctx.exts.clone());
+    b.with_custom_protocol("ozi".into(), move |_, req| pages::serve(&c1, &req))
         .with_custom_protocol("ozi-ext".into(), move |_, req| ext::serve_ext(&m2, &req))
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
@@ -154,6 +165,11 @@ struct App {
     next_id: u64,
     size: (f64, f64),
     settings: pages::SettingsRef,
+    user: pages::UserRef,
+    paths: Paths,
+    filter: Option<blocking::Filter>,
+    find_open: bool,
+    last_flush: std::time::Instant,
     store: ExtensionStore,
     storage: ExtStorage,
     ext_map: ext::ExtMap,
@@ -180,12 +196,16 @@ impl App {
         v
     }
 
+    fn ui_h(&self) -> f64 {
+        UI_BASE_H + if self.find_open { FIND_H } else { 0.0 }
+    }
+
     fn content_rect(&self) -> Rect {
-        rect(0.0, UI_H, self.size.0, self.size.1 - UI_H)
+        rect(0.0, self.ui_h(), self.size.0, self.size.1 - self.ui_h())
     }
 
     fn layout(&self) {
-        let _ = self.ui.set_bounds(rect(0.0, 0.0, self.size.0, UI_H));
+        let _ = self.ui.set_bounds(rect(0.0, 0.0, self.size.0, self.ui_h()));
         let r = || self.content_rect();
         for t in &self.tabs {
             let _ = t.wv.set_bounds(r());
@@ -226,7 +246,7 @@ impl App {
         let tabs: Vec<Value> = self
             .tabs
             .iter()
-            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading}))
+            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading, "private": t.private}))
             .collect();
         let exts: Vec<Value> = self
             .enabled_exts()
@@ -240,7 +260,11 @@ impl App {
                 })
             })
             .collect();
-        let state = json!({"tabs": tabs, "active": self.active, "exts": exts});
+        let bookmarked = self
+            .tab(self.active)
+            .zip(self.user.lock().ok())
+            .is_some_and(|(t, u)| u.is_bookmarked(&t.url));
+        let state = json!({"tabs": tabs, "active": self.active, "exts": exts, "bookmarked": bookmarked, "find": self.find_open});
         let _ = self.ui.evaluate_script(&format!("window.oziUi&&window.oziUi.state({state})"));
         if let Some(t) = self.tab(self.active) {
             let title = if t.title.is_empty() { "Ozi Browser".to_string() } else { format!("{} — Ozi", t.title) };
@@ -255,24 +279,35 @@ impl App {
     }
 
     // ---------------------------------------------------------------- sekmeler
+    fn page_ctx(&self) -> pages::PageCtx {
+        pages::PageCtx { exts: self.ext_map.clone(), settings: self.settings.clone(), user: self.user.clone() }
+    }
+
     fn create_tab(&mut self, url: &str, activate: bool) -> u64 {
+        self.create_tab_ex(url, activate, false)
+    }
+
+    /// `private`: kalıcı veri yok (çerez/önbellek), geçmişe yazılmaz, uzantı çalışmaz.
+    fn create_tab_ex(&mut self, url: &str, activate: bool, private: bool) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         let real = ext::to_real_url(url);
         let ctx = WebCtx::new();
-        let enabled = self.enabled_exts();
+        let enabled = if private { vec![] } else { self.enabled_exts() };
         let refs: Vec<&Extension> = enabled.iter().collect();
-        let scripts = ext::init_scripts(&refs, &ctx);
+        let scripts = if private { vec![] } else { ext::init_scripts(&refs, &ctx) };
         let bounds = self.content_rect();
         let p = self.proxy.clone();
-        let (p_ipc, p_nav, p_title, p_load, p_new) = (p.clone(), p.clone(), p.clone(), p.clone(), p);
+        let (p_ipc, p_nav, p_title, p_load, p_new) = (p.clone(), p.clone(), p.clone(), p.clone(), p.clone());
+        let (p_dl, p_dl2) = (p.clone(), p);
         let need = protocols_needed(&self.web_ctx);
-        let (m, s) = (self.ext_map.clone(), self.settings.clone());
+        let pctx = self.page_ctx();
         let result = build(&self.host, &mut self.web_ctx, |mut b| {
             for sc in scripts {
                 b = b.with_initialization_script(sc);
             }
-            with_protocols(b, need, &m, &s)
+            with_protocols(b, need, &pctx)
+                .with_incognito(private)
                 .with_bounds(bounds)
                 .with_url(real.clone())
                 .with_devtools(true)
@@ -294,11 +329,19 @@ impl App {
                     let _ = p_new.send_event(UserEvent::NewTab(u));
                     NewWindowResponse::Deny
                 })
-                .with_download_started_handler(|_url, path| {
+                .with_download_started_handler(move |url, path| {
                     if let (Some(dir), Some(name)) = (dirs::download_dir(), path.file_name()) {
                         *path = unique_path(dir.join(name));
                     }
+                    let _ = p_dl.send_event(UserEvent::DownloadStart(url, path.to_string_lossy().to_string()));
                     true
+                })
+                .with_download_completed_handler(move |url, path, ok| {
+                    let _ = p_dl2.send_event(UserEvent::DownloadDone(
+                        url,
+                        path.map(|p| p.to_string_lossy().to_string()),
+                        ok,
+                    ));
                 })
         });
         let wv = match result {
@@ -315,7 +358,8 @@ impl App {
         } else {
             let _ = wv.set_visible(false);
         }
-        self.tabs.push(Tab { id, wv, ctx, url: real, title: String::new(), loading: true });
+        blocking::apply(&wv, self.filter);
+        self.tabs.push(Tab { id, wv, ctx, url: real, title: String::new(), loading: true, private });
         if activate {
             self.active = id;
             if let Some(t) = self.tab(id) {
@@ -378,7 +422,7 @@ impl App {
     }
 
     // ---------------------------------------------------------------- uzantılar
-    fn reload_extensions(&mut self) {
+    fn reload_extensions(&mut self, startup: bool) {
         let all = self.store.load_all();
         if let Ok(mut m) = self.ext_map.write() {
             *m = all.into_iter().map(|e| (e.id.clone(), e)).collect();
@@ -388,6 +432,7 @@ impl App {
         for e in self.enabled_exts() {
             self.start_background(&e);
         }
+        self.rebuild_filter(startup);
         self.push_ui();
     }
 
@@ -408,12 +453,12 @@ impl App {
         let (p_ipc, p_load) = (self.proxy.clone(), self.proxy.clone());
         let (id_ipc, id_load) = (id.clone(), id.clone());
         let need = protocols_needed(&self.web_ctx);
-        let (m, s) = (self.ext_map.clone(), self.settings.clone());
+        let pctx = self.page_ctx();
         let result = build(&self.host, &mut self.web_ctx, |mut b| {
             for sc in scripts {
                 b = b.with_initialization_script(sc);
             }
-            with_protocols(b, need, &m, &s)
+            with_protocols(b, need, &pctx)
                 .with_visible(false)
                 .with_bounds(rect(0.0, 0.0, 1.0, 1.0))
                 .with_url(url)
@@ -755,6 +800,45 @@ impl App {
         let s_arg = |k: &str| v[k].as_str().unwrap_or("").to_string();
         match v["cmd"].as_str().unwrap_or("") {
             "ready" => self.push_ui(),
+            "private_tab" => self.on_shortcut(keys::Action::PrivateTab),
+            "bookmark" => self.toggle_bookmark(),
+            "find_toggle" => self.set_find(!self.find_open),
+            "find" => self.find(&s_arg("q"), v["back"].as_bool().unwrap_or(false), v["fresh"].as_bool().unwrap_or(false)),
+            "bm_remove" => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.remove_bookmark(&s_arg("url"));
+                }
+                self.reload_tab(from_tab);
+            }
+            "hist_remove" => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.remove_history(&s_arg("url"));
+                }
+                self.reload_tab(from_tab);
+            }
+            "hist_clear" => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.clear_history();
+                }
+                self.reload_tab(from_tab);
+            }
+            "dl_clear" => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.clear_downloads();
+                }
+                self.reload_tab(from_tab);
+            }
+            "dl_show" => self.show_download(&s_arg("path")),
+            "settings_save" => match self.save_settings(&v["settings"]) {
+                Ok(()) => self.reload_tab(from_tab),
+                Err(e) => {
+                    rfd::MessageDialog::new()
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_title("Ayarlar kaydedilemedi")
+                        .set_description(e)
+                        .show();
+                }
+            },
             "go" => self.navigate(from_tab, &s_arg("input")),
             "new_tab" => {
                 let home = self.settings.read().map(|s| s.homepage.clone()).unwrap_or_default();
@@ -790,14 +874,14 @@ impl App {
                 let id = s_arg("id");
                 let on = self.ext_map.read().ok().and_then(|m| m.get(&id).map(|e| e.enabled)).unwrap_or(false);
                 let _ = self.store.set_enabled(&id, !on);
-                self.reload_extensions();
+                self.reload_extensions(false);
                 self.reload_tab(from_tab);
             }
             "ext_remove" => {
                 let id = s_arg("id");
                 let _ = self.store.remove(&id);
                 self.storage.forget(&id);
-                self.reload_extensions();
+                self.reload_extensions(false);
                 self.reload_tab(from_tab);
             }
             "install_file" => {
@@ -832,7 +916,7 @@ impl App {
         match self.store.install(&path) {
             Ok(e) => {
                 self.just_installed.insert(e.id.clone());
-                self.reload_extensions();
+                self.reload_extensions(false);
             }
             Err(err) => {
                 rfd::MessageDialog::new()
@@ -861,8 +945,17 @@ impl App {
         match ev {
             UserEvent::Ipc(src, body) => self.on_ipc(src, body),
             UserEvent::Title(id, title) => {
+                let mut record = None;
                 if let Some(t) = self.tab_mut(id) {
-                    t.title = title;
+                    t.title = title.clone();
+                    if !t.private {
+                        record = Some(t.url.clone());
+                    }
+                }
+                if let Some(url) = record.filter(|u| !is_internal_url(u)) {
+                    if let Ok(mut u) = self.user.lock() {
+                        u.set_title(&url, &title);
+                    }
                 }
                 self.push_ui();
             }
@@ -887,11 +980,28 @@ impl App {
                 }
                 self.push_ui();
                 if !started {
+                    self.record_visit(id);
                     if let Some(t) = self.tab(id) {
                         let tj = self.tab_json(t);
                         self.fire_bg_all("tabs.onUpdated", json!([id, {"status": "complete", "url": t.url}, tj]));
                     }
                 }
+            }
+            UserEvent::DownloadStart(url, path) => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.download_started(&url, &path, now_secs());
+                }
+            }
+            UserEvent::DownloadDone(url, path, ok) => {
+                if let Ok(mut u) = self.user.lock() {
+                    u.download_finished(&url, path.as_deref(), ok);
+                }
+            }
+            UserEvent::Shortcut(a) => self.on_shortcut(a),
+            UserEvent::FilterReady(raw) => {
+                // SAFETY: işaretçi bu süreçte `blocking::compile` ile üretildi ve ana iş parçacığına taşındı.
+                let f = raw.map(|r| unsafe { blocking::Filter::from_raw(r) });
+                self.set_filter(f);
             }
             UserEvent::NewTab(url) => {
                 self.create_tab(&url, true);
@@ -907,6 +1017,255 @@ impl App {
                 let _ = b.wv.evaluate_script(&b.ctx.call("fire", &[json!(id), json!(name), arg]));
             }
         }
+    }
+}
+
+fn is_internal_url(u: &str) -> bool {
+    ext::is_internal(u) || u.starts_with(ext::EXT_BASE)
+}
+
+impl App {
+    fn flush(&mut self) {
+        if let Ok(mut u) = self.user.lock() {
+            u.flush();
+        }
+        self.last_flush = std::time::Instant::now();
+    }
+
+    fn record_visit(&mut self, id: u64) {
+        let Some(t) = self.tab(id) else { return };
+        if t.private || is_internal_url(&t.url) {
+            return;
+        }
+        let (url, title) = (t.url.clone(), t.title.clone());
+        if let Ok(mut u) = self.user.lock() {
+            u.add_visit(&url, &title, now_secs());
+        }
+        if self.last_flush.elapsed().as_secs() > 10 {
+            self.flush();
+        }
+    }
+
+    fn toggle_bookmark(&mut self) {
+        let Some(t) = self.tab(self.active) else { return };
+        if is_internal_url(&t.url) {
+            return;
+        }
+        let (url, title) = (t.url.clone(), t.title.clone());
+        if let Ok(mut u) = self.user.lock() {
+            u.toggle_bookmark(&url, &title, now_secs());
+        }
+        self.push_ui();
+    }
+
+    fn set_find(&mut self, open: bool) {
+        if self.find_open == open {
+            if open {
+                let _ = self.ui.focus();
+                self.push_ui();
+            }
+            return;
+        }
+        self.find_open = open;
+        self.layout();
+        if open {
+            let _ = self.ui.focus();
+        } else {
+            self.eval_active("window.getSelection&&window.getSelection().removeAllRanges()");
+            if let Some(t) = self.tab(self.active) {
+                let _ = t.wv.focus();
+            }
+        }
+        self.push_ui();
+    }
+
+    fn find(&self, q: &str, back: bool, fresh: bool) {
+        let clear = "window.getSelection&&window.getSelection().removeAllRanges();";
+        if q.is_empty() {
+            return self.eval_active(clear);
+        }
+        let js = format!(
+            "{}window.find({},false,{},true,false,false,false);",
+            if fresh { clear } else { "" },
+            json!(q),
+            back
+        );
+        self.eval_active(&js);
+    }
+
+    fn show_download(&self, path: &str) {
+        // Yalnızca indirme listesindeki yollar açılır.
+        let known = self.user.lock().is_ok_and(|u| u.downloads.iter().any(|d| d.path == path));
+        let Some(dir) = std::path::Path::new(path).parent().filter(|_| known) else { return };
+        #[cfg(windows)]
+        let _ = std::process::Command::new("explorer").arg(dir).spawn();
+        #[cfg(not(windows))]
+        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+    }
+
+    fn open_internal(&mut self, url: &str) {
+        let real = ext::to_real_url(url);
+        match self.tabs.iter().find(|t| t.url == real).map(|t| t.id) {
+            Some(id) => self.switch_tab(id),
+            None => {
+                self.create_tab(url, true);
+            }
+        }
+    }
+
+    fn on_shortcut(&mut self, a: keys::Action) {
+        use keys::Action::*;
+        let focus_omni = |s: &Self| {
+            let _ = s.ui.focus();
+            let _ = s.ui.evaluate_script("window.oziUi&&window.oziUi.focusOmni()");
+        };
+        let rotate = |s: &mut Self, delta: isize| {
+            let n = s.tabs.len() as isize;
+            if let Some(i) = s.tabs.iter().position(|t| t.id == s.active) {
+                let id = s.tabs[(i as isize + delta).rem_euclid(n) as usize].id;
+                s.switch_tab(id);
+            }
+        };
+        match a {
+            NewTab | PrivateTab => {
+                let home = self.settings.read().map(|s| s.homepage.clone()).unwrap_or_else(|_| "ozi://newtab".into());
+                if a == PrivateTab {
+                    self.create_tab_ex("ozi://newtab", true, true);
+                } else {
+                    self.create_tab(&home, true);
+                }
+                focus_omni(self);
+            }
+            CloseTab => self.close_tab(self.active),
+            FocusOmni => focus_omni(self),
+            Reload => self.reload_tab(self.active),
+            Back => self.eval_active("history.back()"),
+            Forward => self.eval_active("history.forward()"),
+            NextTab => rotate(self, 1),
+            PrevTab => rotate(self, -1),
+            GotoTab(i) => {
+                if let Some(id) = self.tabs.get(i).map(|t| t.id) {
+                    self.switch_tab(id);
+                }
+            }
+            GotoLastTab => {
+                if let Some(id) = self.tabs.last().map(|t| t.id) {
+                    self.switch_tab(id);
+                }
+            }
+            Bookmark => self.toggle_bookmark(),
+            History => self.open_internal("ozi://history"),
+            Downloads => self.open_internal("ozi://downloads"),
+            Find => self.set_find(true),
+            DevTools => {
+                if let Some(t) = self.tab(self.active) {
+                    t.wv.open_devtools();
+                }
+            }
+            Fullscreen => {
+                let on = self.host.window.fullscreen().is_some();
+                self.host
+                    .window
+                    .set_fullscreen(if on { None } else { Some(tao::window::Fullscreen::Borderless(None)) });
+            }
+            Escape => {
+                if self.find_open {
+                    self.set_find(false);
+                }
+            }
+        }
+    }
+
+    /// Yerleşik liste + uzantıların declarativeNetRequest statik kurallarından WebKit filtresi kurar.
+    /// `startup`: olay döngüsü başlamadan önce eşzamanlı derle; sonra eşzamansız (yeniden giriş yok).
+    fn rebuild_filter(&mut self, startup: bool) {
+        let block = self.settings.read().map(|s| s.block_ads).unwrap_or(true);
+        let mut rulesets: Vec<Value> = vec![];
+        for e in self.enabled_exts() {
+            let Some(d) = &e.manifest.declarative_net_request else { continue };
+            for r in d.rule_resources.iter().filter(|r| r.enabled) {
+                if let Some(v) = e.read_string(&r.path).and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
+                    rulesets.push(v);
+                }
+            }
+        }
+        let dir = self.paths.data.join("filters");
+        match ozi_core::blocklist::build_filter(block, &rulesets) {
+            None => self.set_filter(None),
+            Some(json) if startup => {
+                let f = blocking::compile_blocking(&dir, &json);
+                self.set_filter(f);
+            }
+            Some(json) => {
+                let p = self.proxy.clone();
+                blocking::compile(&dir, &json, move |f| {
+                    let _ = p.send_event(UserEvent::FilterReady(f.map(|f| f.to_raw())));
+                });
+            }
+        }
+    }
+
+    fn set_filter(&mut self, f: Option<blocking::Filter>) {
+        let old = std::mem::replace(&mut self.filter, f);
+        for t in &self.tabs {
+            blocking::apply(&t.wv, f);
+        }
+        if let Some(o) = old {
+            blocking::release(o);
+        }
+    }
+
+    fn save_settings(&mut self, v: &Value) -> Result<(), String> {
+        let list = v["engines"].as_array().ok_or("arama motoru listesi yok")?;
+        let mut engines: Vec<search::SearchEngine> = vec![];
+        for e in list {
+            let name = e["name"].as_str().unwrap_or("").trim().to_string();
+            let kw = e["keyword"].as_str().unwrap_or("").trim().to_string();
+            let url = e["url"].as_str().unwrap_or("").trim().to_string();
+            if name.is_empty() || kw.is_empty() || kw.len() > 12 || !kw.chars().all(|c| c.is_ascii_alphanumeric()) {
+                return Err(format!("'{name}': ad boş olamaz, anahtar harf/rakam olmalı (en çok 12)"));
+            }
+            if !url.contains("%s") || !(url.starts_with("https://") || url.starts_with("http://")) {
+                return Err(format!("'{name}': URL http(s) ile başlamalı ve %s içermeli"));
+            }
+            if engines.iter().any(|x| x.keyword.eq_ignore_ascii_case(&kw)) {
+                return Err(format!("'{kw}' anahtarı birden fazla motorda kullanılıyor"));
+            }
+            let mut id = e["id"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(String::from).unwrap_or_else(|| {
+                let slug: String = name.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+                if slug.is_empty() { "ozel".into() } else { slug }
+            });
+            while engines.iter().any(|x| x.id == id) {
+                id.push('2');
+            }
+            engines.push(search::SearchEngine { id, name, keyword: kw, url });
+        }
+        if engines.is_empty() {
+            return Err("en az bir arama motoru gerekli".into());
+        }
+        let default_engine = v["default_engine"]
+            .as_str()
+            .filter(|d| engines.iter().any(|e| e.id == *d))
+            .map(String::from)
+            .unwrap_or_else(|| engines[0].id.clone());
+        let homepage = v["homepage"]
+            .as_str()
+            .map(str::trim)
+            .filter(|h| *h == "ozi://newtab" || h.starts_with("https://") || h.starts_with("http://"))
+            .unwrap_or("ozi://newtab")
+            .to_string();
+        let new = Settings {
+            default_engine,
+            engines,
+            homepage,
+            block_ads: v["block_ads"].as_bool().unwrap_or(true),
+        };
+        new.save(&self.paths.settings_file()).map_err(|e| e.to_string())?;
+        if let Ok(mut s) = self.settings.write() {
+            *s = new;
+        }
+        self.rebuild_filter(false);
+        Ok(())
     }
 }
 
@@ -950,13 +1309,15 @@ fn main() {
     let mut web_ctx = WebContext::new(Some(paths.profile_dir()));
     let ext_map: ext::ExtMap = Arc::new(RwLock::new(HashMap::new()));
     let settings_ref: pages::SettingsRef = Arc::new(RwLock::new(settings));
+    let user: pages::UserRef = Arc::new(Mutex::new(UserData::load(paths.userdata_dir())));
+    let pctx = pages::PageCtx { exts: ext_map.clone(), settings: settings_ref.clone(), user: user.clone() };
 
     let p_ui = proxy.clone();
     let need = protocols_needed(&web_ctx);
     let ui = build(&host, &mut web_ctx, |b| {
-        with_protocols(b, need, &ext_map, &settings_ref)
+        with_protocols(b, need, &pctx)
             .with_html(include_str!("ui.html"))
-            .with_bounds(rect(0.0, 0.0, size.0, UI_H))
+            .with_bounds(rect(0.0, 0.0, size.0, UI_BASE_H))
             .with_ipc_handler(move |req| {
                 let _ = p_ui.send_event(UserEvent::Ipc(Src::Ui, req.into_body()));
             })
@@ -973,6 +1334,13 @@ fn main() {
         next_id: 1,
         size,
         settings: settings_ref.clone(),
+        user,
+        paths: paths.clone(),
+        filter: None,
+        find_open: false,
+        last_flush: std::time::Instant::now()
+            .checked_sub(std::time::Duration::from_secs(60))
+            .unwrap_or_else(std::time::Instant::now),
         store: ExtensionStore::new(paths.extensions_dir()),
         storage: ExtStorage::new(paths.storage_dir()),
         ext_map,
@@ -981,8 +1349,13 @@ fn main() {
         just_installed: HashSet::new(),
         quit: false,
     };
-    // Komut satırı: `ozi-browser [--install UZANTI]... [URL]...`
+    let p_keys = app.proxy.clone();
+    keys::install(&app.host.window, move |a| {
+        let _ = p_keys.send_event(UserEvent::Shortcut(a));
+    });
+    // Komut satırı: `ozi-browser [--private] [--install UZANTI]... [URL]...`
     let mut urls: Vec<String> = Vec::new();
+    let mut private = false;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         if a == "--install" {
@@ -995,28 +1368,34 @@ fn main() {
                     Err(err) => eprintln!("uzantı yüklenemedi ({p}): {err}"),
                 }
             }
+        } else if a == "--private" {
+            private = true;
         } else if !a.starts_with("--") {
             urls.push(a);
         }
     }
-    app.reload_extensions();
+    app.reload_extensions(true);
     if urls.is_empty() {
         urls.push(settings_ref.read().map(|s| s.homepage.clone()).unwrap_or_else(|_| "ozi://newtab".into()));
     }
     for u in urls {
         let s = settings_ref.read().map(|s| s.clone()).unwrap_or_default();
         let url = search::resolve(&u, &s.engines, &s.default_engine);
-        app.create_tab(&url, true);
+        app.create_tab_ex(&url, true, private);
     }
 
     event_loop.run(move |event, _, flow| {
         *flow = ControlFlow::Wait;
         match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => *flow = ControlFlow::Exit,
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                app.flush();
+                *flow = ControlFlow::Exit;
+            }
             Event::WindowEvent { event: WindowEvent::Resized(sz), .. } => app.resize(sz),
             Event::UserEvent(ev) => {
                 app.on_user_event(ev);
                 if app.quit {
+                    app.flush();
                     *flow = ControlFlow::Exit;
                 }
             }

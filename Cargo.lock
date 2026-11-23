@@ -1616,6 +1616,8 @@ dependencies = [
  "serde_json",
  "tao",
  "url",
+ "webkit2gtk",
+ "webkit2gtk-sys",
  "wry",
 ]
 

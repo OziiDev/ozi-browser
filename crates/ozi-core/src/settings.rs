@@ -10,6 +10,8 @@ pub struct Settings {
     pub default_engine: String,
     pub engines: Vec<SearchEngine>,
     pub homepage: String,
+    /// Yerleşik reklam/izleyici engelleme (Linux/WebKitGTK)
+    pub block_ads: bool,
 }
 
 impl Default for Settings {
@@ -18,6 +20,7 @@ impl Default for Settings {
             default_engine: DEFAULT_ENGINE_ID.into(),
             engines: builtin_engines(),
             homepage: "ozi://newtab".into(),
+            block_ads: true,
         }
     }
 }
@@ -68,6 +71,10 @@ impl Paths {
     }
     pub fn storage_dir(&self) -> PathBuf {
         self.data.join("ext-storage")
+    }
+    /// Geçmiş, yer imleri, indirme kayıtları
+    pub fn userdata_dir(&self) -> PathBuf {
+        self.data.join("userdata")
     }
     /// WebKit/WebView2 çerez, önbellek ve oturum verisi
     pub fn profile_dir(&self) -> PathBuf {

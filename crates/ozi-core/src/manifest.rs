@@ -41,6 +41,27 @@ pub struct Manifest {
     pub browser_specific_settings: Option<BrowserSpecific>,
     #[serde(default)]
     pub applications: Option<BrowserSpecific>,
+    #[serde(default)]
+    pub declarative_net_request: Option<DeclarativeNetRequest>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct DeclarativeNetRequest {
+    #[serde(default)]
+    pub rule_resources: Vec<RuleResource>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RuleResource {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    pub path: String,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

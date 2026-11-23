@@ -5,12 +5,11 @@
 <title>Ozi UI</title>
 <style>
   :root {
-    --bg: #1b1c21; --bar: #25262d; --tab: #2c2d35; --tab-active: #3a3b46; --fg: #e8e9ee;
-    --muted: #9b9dab; --accent: #ff7a2f; --input: #14151a; --border: #34353f;
+    --bg: #1b1c21; --bar: #25262d; --tab: #2c2d35; --fg: #e8e9ee; --muted: #9b9dab;
+    --accent: #ff7a2f; --input: #14151a; --border: #34353f; --private: #7c5cff;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg: #dfe1e8; --bar: #f4f5f9; --tab: #e6e8ef; --tab-active: #ffffff; --fg: #1d1e24;
-      --muted: #6a6c7a; --input: #e9ebf2; --border: #d0d3dd; }
+    :root { --bg: #dfe1e8; --bar: #f4f5f9; --tab: #e6e8ef; --fg: #1d1e24; --muted: #6a6c7a; --input: #e9ebf2; --border: #d0d3dd; }
   }
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
   html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
@@ -19,6 +18,7 @@
   .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 220px;
     height: 32px; padding: 0 8px 0 12px; border-radius: 9px 9px 0 0; background: var(--tab); color: var(--muted); cursor: default; }
   .tab.active { background: var(--bar); color: var(--fg); }
+  .tab.private.active { box-shadow: inset 0 2px 0 var(--private); }
   .tab .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .tab .x { width: 18px; height: 18px; border-radius: 50%; border: 0; background: none; color: inherit; cursor: pointer; line-height: 18px; }
   .tab .x:hover { background: rgba(127,127,127,.3); }
@@ -27,14 +27,20 @@
   @keyframes sp { to { transform: rotate(360deg); } }
   #newtab { margin: 0 0 4px 4px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: 18px; cursor: pointer; }
   #newtab:hover, .nb:hover { background: rgba(127,127,127,.25); }
-  #bar { display: flex; align-items: center; gap: 4px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
+  #bar { display: flex; align-items: center; gap: 3px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
   .nb { width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; color: var(--fg); font-size: 16px; cursor: pointer; flex: none;
     display: grid; place-items: center; }
   .nb img { width: 18px; height: 18px; object-fit: contain; }
-  #omni { flex: 1; height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 16px; outline: none;
+  #star.on { color: var(--accent); }
+  #omni { flex: 1; min-width: 80px; height: 32px; padding: 0 14px; border: 1px solid transparent; border-radius: 16px; outline: none;
     background: var(--input); color: var(--fg); font-size: 14px; user-select: text; -webkit-user-select: text; }
-  #omni:focus { border-color: var(--accent); }
+  #omni:focus, #fq:focus { border-color: var(--accent); }
   #exts { display: flex; gap: 2px; }
+  #find { display: none; align-items: center; gap: 6px; height: 40px; padding: 0 12px; background: var(--bar); border-bottom: 1px solid var(--border); }
+  #find.open { display: flex; }
+  #fq { width: 260px; height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 14px; outline: none;
+    background: var(--input); color: var(--fg); font-size: 13px; user-select: text; -webkit-user-select: text; }
+  #find .nb { width: 28px; height: 28px; font-size: 14px; }
 </style>
 <body>
   <div id="tabs"></div>
@@ -42,25 +48,37 @@
     <button class="nb" id="back" title="Geri (Alt+←)">←</button>
     <button class="nb" id="fwd" title="İleri (Alt+→)">→</button>
     <button class="nb" id="reload" title="Yenile (Ctrl+R)">⟳</button>
-    <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="DuckDuckGo'da ara ya da adres yaz  ·  g sorgu → Google">
+    <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="Ara ya da adres yaz  ·  g sorgu → Google">
+    <button class="nb" id="star" title="Yer imi ekle (Ctrl+D)">☆</button>
     <div id="exts"></div>
+    <button class="nb" id="hist" title="Geçmiş (Ctrl+H)">🕘</button>
+    <button class="nb" id="bms" title="Yer imleri">📑</button>
+    <button class="nb" id="dls" title="İndirmeler (Ctrl+J)">⬇</button>
     <button class="nb" id="extpage" title="Uzantılar">🧩</button>
+    <button class="nb" id="setpage" title="Ayarlar">⚙</button>
+  </div>
+  <div id="find">
+    <input id="fq" type="text" spellcheck="false" placeholder="Sayfada ara…">
+    <button class="nb" id="fprev" title="Önceki (Shift+Enter)">↑</button>
+    <button class="nb" id="fnext" title="Sonraki (Enter)">↓</button>
+    <button class="nb" id="fclose" title="Kapat (Esc)">✕</button>
   </div>
 <script>
-  var S = { tabs: [], active: 0, exts: [] };
+  var S = { tabs: [], active: 0, exts: [], bookmarked: false, find: false };
   var $ = function (id) { return document.getElementById(id); };
   function ipc(o) { window.ipc.postMessage(JSON.stringify(o)); }
+  function go(u) { ipc({ cmd: 'go', input: u }); }
 
   function render() {
     var box = $('tabs');
     box.textContent = '';
     S.tabs.forEach(function (t) {
       var el = document.createElement('div');
-      el.className = 'tab' + (t.id === S.active ? ' active' : '');
+      el.className = 'tab' + (t.id === S.active ? ' active' : '') + (t.private ? ' private' : '');
       if (t.loading) { var sp = document.createElement('span'); sp.className = 'spin'; el.appendChild(sp); }
       var title = document.createElement('span');
       title.className = 't';
-      title.textContent = t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : t.url) || 'Yeni sekme';
+      title.textContent = (t.private ? '🕶 ' : '') + (t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : t.url) || 'Yeni sekme');
       el.appendChild(title);
       var x = document.createElement('button');
       x.className = 'x'; x.textContent = '×'; x.title = 'Sekmeyi kapat';
@@ -79,6 +97,9 @@
     if (cur && document.activeElement !== $('omni')) {
       $('omni').value = cur.url === 'ozi://newtab' ? '' : cur.url;
     }
+    $('star').textContent = S.bookmarked ? '★' : '☆';
+    $('star').className = 'nb' + (S.bookmarked ? ' on' : '');
+    $('find').className = S.find ? 'open' : '';
     var ex = $('exts');
     ex.textContent = '';
     S.exts.forEach(function (e) {
@@ -91,24 +112,48 @@
     });
   }
 
-  window.oziUi = { state: function (s) { S = s; render(); }, focusOmni: function () { $('omni').focus(); $('omni').select(); } };
+  window.oziUi = {
+    state: function (s) { var open = S.find; S = s; render(); if (S.find && !open) { $('fq').focus(); $('fq').select(); } },
+    focusOmni: function () { $('omni').focus(); $('omni').select(); }
+  };
 
   $('omni').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { ipc({ cmd: 'go', input: this.value }); this.blur(); }
+    if (e.key === 'Enter') { go(this.value); this.blur(); }
     else if (e.key === 'Escape') { this.blur(); render(); }
   });
   $('omni').addEventListener('focus', function () { this.select(); });
   $('back').onclick = function () { ipc({ cmd: 'back' }); };
   $('fwd').onclick = function () { ipc({ cmd: 'forward' }); };
   $('reload').onclick = function () { ipc({ cmd: 'reload' }); };
-  $('extpage').onclick = function () { ipc({ cmd: 'go', input: 'ozi://extensions' }); };
+  $('star').onclick = function () { ipc({ cmd: 'bookmark' }); };
+  $('hist').onclick = function () { go('ozi://history'); };
+  $('bms').onclick = function () { go('ozi://bookmarks'); };
+  $('dls').onclick = function () { go('ozi://downloads'); };
+  $('extpage').onclick = function () { go('ozi://extensions'); };
+  $('setpage').onclick = function () { go('ozi://settings'); };
 
+  $('fq').addEventListener('input', function () { ipc({ cmd: 'find', q: this.value, back: false, fresh: true }); });
+  $('fq').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') ipc({ cmd: 'find', q: this.value, back: e.shiftKey });
+    else if (e.key === 'Escape') ipc({ cmd: 'find_toggle' });
+  });
+  $('fnext').onclick = function () { ipc({ cmd: 'find', q: $('fq').value, back: false }); };
+  $('fprev').onclick = function () { ipc({ cmd: 'find', q: $('fq').value, back: true }); };
+  $('fclose').onclick = function () { ipc({ cmd: 'find_toggle' }); };
+
+  // Yedek kısayollar (Linux'ta Rust pencere düzeyinde de yakalar; Windows'ta yalnızca bunlar).
   document.addEventListener('keydown', function (e) {
     var c = e.ctrlKey || e.metaKey;
-    if (c && e.key === 't') { e.preventDefault(); ipc({ cmd: 'new_tab' }); }
-    else if (c && e.key === 'w') { e.preventDefault(); ipc({ cmd: 'close_tab', id: S.active }); }
-    else if (c && e.key === 'l') { e.preventDefault(); window.oziUi.focusOmni(); }
-    else if ((c && e.key === 'r') || e.key === 'F5') { e.preventDefault(); ipc({ cmd: 'reload' }); }
+    var k = e.key.toLowerCase();
+    if (c && e.shiftKey && k === 'n') { e.preventDefault(); ipc({ cmd: 'private_tab' }); }
+    else if (c && k === 't') { e.preventDefault(); ipc({ cmd: 'new_tab' }); }
+    else if (c && k === 'w') { e.preventDefault(); ipc({ cmd: 'close_tab', id: S.active }); }
+    else if (c && k === 'l') { e.preventDefault(); window.oziUi.focusOmni(); }
+    else if (c && k === 'd') { e.preventDefault(); ipc({ cmd: 'bookmark' }); }
+    else if (c && k === 'f') { e.preventDefault(); ipc({ cmd: 'find_toggle' }); }
+    else if (c && k === 'h') { e.preventDefault(); go('ozi://history'); }
+    else if (c && k === 'j') { e.preventDefault(); go('ozi://downloads'); }
+    else if ((c && k === 'r') || e.key === 'F5') { e.preventDefault(); ipc({ cmd: 'reload' }); }
     else if (e.altKey && e.key === 'ArrowLeft') ipc({ cmd: 'back' });
     else if (e.altKey && e.key === 'ArrowRight') ipc({ cmd: 'forward' });
   });
