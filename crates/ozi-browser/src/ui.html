@@ -288,6 +288,9 @@
   window.oziUi = {
     state: function (s) { var open = S.find; S = s; render(); if (S.find && !open) { $('fq').focus(); $('fq').select(); } },
     focusOmni: function () { $('omni').focus(); $('omni').select(); },
+    blurOmni: function () { $('omni').blur(); },
+    // Öneri listesinde ok tuşlarıyla gezinirken adres çubuğunu seçili öğeyle doldur
+    fill: function (text) { var o = $('omni'); o.value = text; try { o.setSelectionRange(text.length, text.length); } catch (e) {} updateChip(); },
     // Satır içi tamamlama: yazılan metin bir ziyaret edilen adresin başıysa kalanını seçili ekle
     suggest: function (q, list) {
       var o = $('omni');
@@ -308,16 +311,23 @@
 
   $('omni').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { go(this.value); this.blur(); }
-    else if (e.key === 'Escape') { this.blur(); render(); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); post({ cmd: 'sug_move', d: e.key === 'ArrowDown' ? 1 : -1 }); }
+    else if (e.key === 'Escape') { post({ cmd: 'sug_hide' }); this.blur(); render(); }
   });
   $('omni').addEventListener('input', function (e) {
     updateChip();
     var q = this.value;
     var deleting = e.inputType && e.inputType.indexOf('delete') === 0;
-    if (!deleting && q && !/\s/.test(q)) post({ cmd: 'suggest', q: q });
+    var r = $('omniwrap').getBoundingClientRect();
+    if (!q.trim()) post({ cmd: 'sug_hide' });
+    else post({ cmd: 'suggest', q: q, x: r.left, y: r.bottom + 5, w: r.width, inline: !deleting && !/\s/.test(q) });
   });
   $('omni').addEventListener('focus', function () { this.select(); updateChip(); });
-  $('omni').addEventListener('blur', function () { $('chip').classList.remove('show'); });
+  $('omni').addEventListener('blur', function () {
+    $('chip').classList.remove('show');
+    // Liste satırına tıklama mousedown ile seçilir; blur'dan sonra kapatmak için kısa gecikme
+    setTimeout(function () { if (document.activeElement !== $('omni')) post({ cmd: 'sug_hide' }); }, 180);
+  });
   $('back').onclick = function () { post({ cmd: 'back' }); };
   $('fwd').onclick = function () { post({ cmd: 'forward' }); };
   $('reload').onclick = function () {

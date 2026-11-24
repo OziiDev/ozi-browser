@@ -12,6 +12,8 @@ pub struct Settings {
     pub homepage: String,
     /// Yerleşik reklam/izleyici engelleme (Linux/WebKitGTK)
     pub block_ads: bool,
+    /// Açılışta önceki oturumun sekmelerini geri yükle (varsayılan: kapalı)
+    pub restore_session: bool,
 }
 
 impl Default for Settings {
@@ -21,6 +23,7 @@ impl Default for Settings {
             engines: builtin_engines(),
             homepage: "ozi://newtab".into(),
             block_ads: true,
+            restore_session: false,
         }
     }
 }
@@ -65,6 +68,12 @@ impl Paths {
 
     pub fn settings_file(&self) -> PathBuf {
         self.config.join("settings.json")
+    }
+    pub fn window_file(&self) -> PathBuf {
+        self.config.join("window.json")
+    }
+    pub fn session_file(&self) -> PathBuf {
+        self.data.join("userdata").join("session.json")
     }
     pub fn extensions_dir(&self) -> PathBuf {
         self.data.join("extensions")

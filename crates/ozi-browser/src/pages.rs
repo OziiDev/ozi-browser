@@ -297,6 +297,7 @@ fn settings(settings: &SettingsRef) -> String {
 <input type=text id=nu placeholder="https://site.com/ara?q=%s" class=grow><button id=add>Ekle</button></div></div>
 <div class="card flat"><b>Ana sayfa</b><div style="margin-top:8px"><input type=text id=home></div></div>
 <div class="card flat"><label class=switch><input type=checkbox id=ads><i></i><span>Reklam ve izleyicileri engelle <span class=muted>(Linux)</span></span></label></div>
+<div class="card flat"><label class=switch><input type=checkbox id=rs><i></i><span>Açılışta önceki sekmeleri geri yükle <span class=muted>(gizli sekmeler hariç)</span></span></label></div>
 <div class=row><button class=p id=save>Kaydet</button><span id=msg class=muted></span></div>"#;
     let script = format!(
         r#"var S={data};var box=document.getElementById('engines');
@@ -311,8 +312,8 @@ r.append(up,dn,rm);box.appendChild(r);}});}}
 document.getElementById('add').onclick=function(){{var nm=nn.value.trim(),kw=nk.value.trim(),ur=nu.value.trim();
 if(!nm||!kw||ur.indexOf('%s')<0||!/^https?:\/\//.test(ur)){{msg.textContent='Ad, anahtar ve %s içeren http(s) URL gerekli.';return;}}
 S.engines.push({{id:'',name:nm,keyword:kw,url:ur}});nn.value=nk.value=nu.value='';msg.textContent='';draw();}};
-home.value=S.homepage;ads.checked=S.block_ads;
-document.getElementById('save').onclick=function(){{S.homepage=home.value.trim()||'ozi://newtab';S.block_ads=ads.checked;send({{cmd:'settings_save',settings:S}});}};
+home.value=S.homepage;ads.checked=S.block_ads;rs.checked=!!S.restore_session;
+document.getElementById('save').onclick=function(){{S.homepage=home.value.trim()||'ozi://newtab';S.block_ads=ads.checked;S.restore_session=rs.checked;send({{cmd:'settings_save',settings:S}});}};
 draw();"#,
         data = embed(&data)
     );

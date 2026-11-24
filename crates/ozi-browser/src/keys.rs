@@ -22,6 +22,9 @@ pub enum Action {
     DevTools,
     Fullscreen,
     Escape,
+    ReopenTab,
+    MoveTabLeft,
+    MoveTabRight,
 }
 
 #[cfg(target_os = "linux")]
@@ -41,6 +44,7 @@ pub fn install(window: &tao::window::Window, send: impl Fn(Action) + 'static) {
         let act = if ctrl && !alt {
             match (ch, shift) {
                 (Some('t'), false) => Some(Action::NewTab),
+                (Some('t'), true) => Some(Action::ReopenTab),
                 (Some('n'), true) => Some(Action::PrivateTab),
                 (Some('w'), _) => Some(Action::CloseTab),
                 (Some('l'), _) => Some(Action::FocusOmni),
@@ -51,6 +55,8 @@ pub fn install(window: &tao::window::Window, send: impl Fn(Action) + 'static) {
                 (Some('f'), false) => Some(Action::Find),
                 (Some('9'), false) => Some(Action::GotoLastTab),
                 (Some(c @ '1'..='8'), false) => Some(Action::GotoTab(c as usize - '1' as usize)),
+                _ if shift && key == k::Page_Down => Some(Action::MoveTabRight),
+                _ if shift && key == k::Page_Up => Some(Action::MoveTabLeft),
                 _ if key == k::Tab || key == k::ISO_Left_Tab => {
                     Some(if shift { Action::PrevTab } else { Action::NextTab })
                 }
