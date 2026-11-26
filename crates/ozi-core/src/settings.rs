@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const THEMES: &[&str] = &["system", "light", "dark"];
+pub const RENDER_MODES: &[&str] = &["auto", "compat", "fast"];
 /// (kimlik, renk)
 pub const ACCENTS: &[(&str, &str)] = &[
     ("blue", "#3b8eea"),
@@ -32,6 +33,8 @@ pub struct Settings {
     pub theme: String,
     /// "blue" | "orange" | "violet" | "green" | "pink"
     pub accent: String,
+    /// WebKit çizim yolu: "auto" (DMABUF kapalı, önerilen) | "compat" (DMABUF + hızlandırılmış birleştirme kapalı) | "fast" (varsayılanlar)
+    pub rendering: String,
 }
 
 impl Default for Settings {
@@ -44,6 +47,7 @@ impl Default for Settings {
             restore_session: false,
             theme: "system".into(),
             accent: "blue".into(),
+            rendering: "auto".into(),
         }
     }
 }
@@ -65,6 +69,9 @@ impl Settings {
         }
         if !ACCENTS.iter().any(|(id, _)| *id == s.accent) {
             s.accent = "blue".into();
+        }
+        if !RENDER_MODES.contains(&s.rendering.as_str()) {
+            s.rendering = "auto".into();
         }
         s
     }
@@ -135,6 +142,7 @@ mod tests {
         let l = Settings::load(&p);
         assert_eq!((l.theme.as_str(), l.accent.as_str()), ("system", "blue"), "geçersiz değerler onarılır");
         assert_eq!(accent_hex("orange"), "#ff7a2f");
+        assert_eq!(l.rendering, "auto");
         let _ = std::fs::remove_file(p);
     }
 }

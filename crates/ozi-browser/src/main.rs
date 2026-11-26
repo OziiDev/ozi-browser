@@ -240,6 +240,8 @@ struct App {
     popup_ready: bool,
     /// Panelin istenen konumu (konteyner koordinatları): x, y, genişlik, yükseklik
     popup_rect: Option<(f64, f64, f64, f64)>,
+    /// Panelden sonra başka widget eklendi mi (panelin yeniden en üste alınması gerekir)
+    popup_z_dirty: bool,
     /// GTK yeniden yerleştirince eşzamanlı uygulanacak webview hedefleri
     targets: layout::Targets,
     /// Hazır olmadan istenen son içerik betiği (hazır olunca çalıştırılır)
@@ -478,6 +480,7 @@ impl App {
         } else {
             let _ = wv.set_visible(false);
         }
+        self.popup_z_dirty = true;
         blocking::apply(&wv, self.filter);
         tune::tune(&wv);
         webstate::watch(&wv, id, self.proxy.clone());
@@ -1262,7 +1265,12 @@ impl App {
     /// Paneli en üste al ve konumlandır (Fixed yeniden yerleşir; `layout` hedefleri yeniden uygular).
     fn place_popup(&mut self, x: f64, y: f64, w: f64, h: f64) {
         self.popup_rect = Some((x, y, w, h));
-        self.raise_popup();
+        // Her tuş vuruşunda çıkarıp yeniden eklemek WebKit yüzeyini yeniden kurup titretir:
+        // yalnızca panel gizliyken ya da sonradan başka widget eklendiyse yükselt.
+        if !self.sug_open || self.popup_z_dirty {
+            self.raise_popup();
+            self.popup_z_dirty = false;
+        }
         self.layout();
     }
 
@@ -1834,6 +1842,11 @@ impl App {
             block_ads: v["block_ads"].as_bool().unwrap_or(true),
             restore_session: v["restore_session"].as_bool().unwrap_or(false),
             theme: v["theme"].as_str().filter(|t| ozi_core::settings::THEMES.contains(t)).unwrap_or("system").to_string(),
+            rendering: v["rendering"]
+                .as_str()
+                .filter(|r| ozi_core::settings::RENDER_MODES.contains(r))
+                .unwrap_or("auto")
+                .to_string(),
             accent: v["accent"]
                 .as_str()
                 .filter(|a| ozi_core::settings::ACCENTS.iter().any(|(id, _)| id == a))
@@ -1848,6 +1861,28 @@ impl App {
         self.push_ui();
         self.rebuild_filter(false);
         Ok(())
+    }
+}
+
+/// WebKit çizim yolunu seçer; WebKit başlamadan önce çağrılmalıdır. Kullanıcı ortam değişkenini
+/// kendisi verdiyse dokunulmaz; `OZI_RENDER=auto|compat|fast` ayarı geçersiz kılar.
+///
+/// Neden: WebKitGTK'nın DMABUF çizim yolu, Wayland'da NVIDIA'nın kapalı kaynak sürücüsüyle (özellikle
+/// Intel+NVIDIA melez ekran kartlarında) bozuk, titreyen ya da yanlış arka plan çizimlerine yol açıyor.
+fn apply_render_env(setting: &str) {
+    let mode = std::env::var("OZI_RENDER").unwrap_or_else(|_| setting.to_string());
+    let set = |k: &str| {
+        if std::env::var_os(k).is_none() {
+            std::env::set_var(k, "1");
+        }
+    };
+    match mode.as_str() {
+        "fast" => {}
+        "compat" => {
+            set("WEBKIT_DISABLE_DMABUF_RENDERER");
+            set("WEBKIT_DISABLE_COMPOSITING_MODE");
+        }
+        _ => set("WEBKIT_DISABLE_DMABUF_RENDERER"),
     }
 }
 
@@ -1873,6 +1908,7 @@ fn main() {
             )
         })
         .unwrap_or((0.0, 0.0, false));
+    apply_render_env(&settings.rendering);
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     // Varsayılan boyut ekrana sığmalı (1366x768 gibi küçük ekranlarda 1280x800 taşıyordu)
     let (win_w, win_h) = if win_w > 0.0 {
@@ -1957,6 +1993,7 @@ fn main() {
         popup: None,
         popup_ready: false,
         popup_rect: None,
+        popup_z_dirty: true,
         targets,
         popup_pending: None,
         sug: vec![],

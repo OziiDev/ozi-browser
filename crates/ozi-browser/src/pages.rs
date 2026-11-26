@@ -145,6 +145,7 @@ fn newtab(settings: &SettingsRef, user: &UserRef) -> String {
     let css = r#"
 body{min-height:100vh;overflow-x:hidden}
 .bg{position:fixed;inset:0;z-index:-1;overflow:hidden}
+.idle .bg i{animation-play-state:paused}
 .bg i{position:absolute;width:70vmax;height:70vmax;border-radius:50%;will-change:transform;animation:drift 34s ease-in-out infinite alternate}
 .bg i:nth-child(1){background:radial-gradient(circle,color-mix(in srgb,var(--accent) 40%,transparent) 0,transparent 62%);left:-25vmax;top:-32vmax}
 .bg i:nth-child(2){background:radial-gradient(circle,rgba(255,77,141,.26) 0,transparent 62%);right:-32vmax;top:-2vmax;animation-duration:42s;animation-delay:-9s}
@@ -180,6 +181,7 @@ document.getElementById('clock').textContent=('0'+h).slice(-2)+':'+('0'+d.getMin
 var g=h<5?'İyi geceler':h<12?'Günaydın':h<18?'İyi günler':'İyi akşamlar';
 document.getElementById('greet').textContent=g+' · '+d.toLocaleDateString('tr-TR',{{weekday:'long',day:'numeric',month:'long'}});}}
 tick();setInterval(tick,15000);
+document.addEventListener('visibilitychange',function(){{document.documentElement.classList.toggle('idle',document.hidden);}});
 var box=document.getElementById('tiles');
 SITES.forEach(function(s,i){{var a=document.createElement('a');a.className='tile';a.href=s.url;a.style.setProperty('--i',i);
 var av=document.createElement('div');av.className='av';av.style.background='linear-gradient(135deg,hsl('+hue(s.host)+',65%,52%),hsl('+((hue(s.host)+40)%360)+',65%,42%))';
@@ -326,6 +328,8 @@ fn settings(settings: &SettingsRef) -> String {
     let body = r#"<h1>Ayarlar</h1>
 <div class="card flat"><b>Görünüm</b><div style="margin-top:10px"><div class=seg id=themeSeg></div></div>
 <div class=row id=swatches style="margin-top:14px"></div></div>
+<div class="card flat"><b>Çizim modu</b><p class=muted style="margin:6px 0 10px">Ekranda bozuk/titreyen çizim görürseniz <b>Uyumluluk</b>'u seçin (özellikle NVIDIA ekran kartlarında). Değişiklik yeniden başlatınca geçerli olur.</p>
+<div class=seg id=renderSeg></div></div>
 <div class="card flat"><b>Arama motorları</b><p class=muted>Seçili olan varsayılandır. Adres çubuğunda <code>anahtar sorgu</code> yazarak diğerlerini kullanın. URL'de <code>%s</code> sorgunun yerine geçer.</p>
 <div id=engines></div>
 <div class=row style="margin-top:10px"><input type=text id=nn placeholder="Ad" style="width:130px"><input type=text id=nk placeholder="Anahtar" style="width:90px">
@@ -340,7 +344,10 @@ fn settings(settings: &SettingsRef) -> String {
     let script = format!(
         r#"var ACC={accents};var S={data};var box=document.getElementById('engines');
 var TH=[['system','Sistem'],['light','Açık'],['dark','Koyu']];
-function drawTheme(){{var seg=document.getElementById('themeSeg');seg.textContent='';
+var RM=[['auto','Otomatik (önerilen)'],['compat','Uyumluluk'],['fast','Hızlı']];
+function drawRender(){{var seg=document.getElementById('renderSeg');seg.textContent='';
+RM.forEach(function(t){{var b=document.createElement('button');b.textContent=t[1];b.className=S.rendering===t[0]?'on':'';b.onclick=function(){{S.rendering=t[0];drawRender();}};seg.appendChild(b);}});}}
+function drawTheme(){{drawRender();var seg=document.getElementById('themeSeg');seg.textContent='';
 TH.forEach(function(t){{var b=document.createElement('button');b.textContent=t[1];b.className=S.theme===t[0]?'on':'';
 b.onclick=function(){{S.theme=t[0];if(t[0]==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t[0]);drawTheme();}};seg.appendChild(b);}});
 var sw=document.getElementById('swatches');sw.textContent='';
