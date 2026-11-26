@@ -105,6 +105,8 @@
       if (accent) document.documentElement.style.setProperty('--accent', accent);
     }
   };
+  // Sayfa yüklendi: Rust bekleyen içeriği şimdi gönderebilir (yüklenmeden gönderilen betikler kaybolur)
+  post({ cmd: 'pop_ready' });
   // Menü odak kaybedince ya da Esc ile kapanır
   window.addEventListener('blur', function () { if (mode === 'menu') post({ cmd: 'menu_hide' }); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mode === 'menu') post({ cmd: 'menu_hide' }); });

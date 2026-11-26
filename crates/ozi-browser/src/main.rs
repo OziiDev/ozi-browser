@@ -8,6 +8,7 @@
 mod blocking;
 mod ext;
 mod keys;
+mod layout;
 mod pages;
 mod tune;
 mod webstate;
@@ -235,6 +236,14 @@ struct App {
     filter: Option<blocking::Filter>,
     find_open: bool,
     popup: Option<WebView>,
+    /// Panel sayfası yüklenip `pop_ready` gönderdi mi
+    popup_ready: bool,
+    /// Panelin istenen konumu (konteyner koordinatları): x, y, genişlik, yükseklik
+    popup_rect: Option<(f64, f64, f64, f64)>,
+    /// GTK yeniden yerleştirince eşzamanlı uygulanacak webview hedefleri
+    targets: layout::Targets,
+    /// Hazır olmadan istenen son içerik betiği (hazır olunca çalıştırılır)
+    popup_pending: Option<String>,
     sug: Vec<Sug>,
     sug_sel: Option<usize>,
     sug_q: String,
@@ -289,11 +298,23 @@ impl App {
     }
 
     fn layout(&self) {
-        let _ = self.ui.set_bounds(self.at(0.0, 0.0, self.size.0, self.ui_h()));
-        let r = || self.content_rect();
+        let (ox, oy) = self.origin;
+        let (w, h) = self.size;
+        let uh = self.ui_h();
+        let r = |v: f64| v.round() as i32;
+        let mut items: Vec<(&Wv, layout::Rect4)> = vec![];
+        let _ = self.ui.set_bounds(self.at(0.0, 0.0, w, uh));
+        items.push((&self.ui, (r(ox), r(oy), r(w), r(uh))));
+        let content = (r(ox), r(oy + uh), r(w), r((h - uh).max(1.0)));
         for t in &self.tabs {
-            let _ = t.wv.set_bounds(r());
+            let _ = t.wv.set_bounds(self.content_rect());
+            items.push((&t.wv, content));
         }
+        if let (Some(p), Some((x, y, pw, ph))) = (&self.popup, self.popup_rect) {
+            let _ = p.set_bounds(self.at(x, y, pw, ph));
+            items.push((p, (r(ox + x), r(oy + y), r(pw), r(ph))));
+        }
+        layout::set(&self.targets, items);
     }
 
     fn resize(&mut self, sz: PhysicalSize<u32>) {
@@ -461,6 +482,7 @@ impl App {
         tune::tune(&wv);
         webstate::watch(&wv, id, self.proxy.clone());
         self.tabs.push(Tab { id, wv, ctx, url: real, title: String::new(), loading: true, progress: 0.0, can_back: false, can_forward: false, private });
+        self.layout();
         if activate {
             self.active = id;
             if let Some(t) = self.tab(id) {
@@ -484,8 +506,8 @@ impl App {
             let _ = t.wv.set_visible(t.id == id);
         }
         self.active = id;
+        self.layout();
         if let Some(t) = self.tab(id) {
-            let _ = t.wv.set_bounds(self.content_rect());
             let _ = t.wv.focus();
         }
         self.push_ui();
@@ -900,6 +922,12 @@ impl App {
                         self.sug_pick(i as usize);
                     }
                 }
+                Some("pop_ready") => {
+                    self.popup_ready = true;
+                    if let (Some(js), Some(p)) = (self.popup_pending.take(), &self.popup) {
+                        let _ = p.evaluate_script(&js);
+                    }
+                }
                 Some("menu_pick") => self.menu_pick(v["id"].as_str().unwrap_or("")),
                 Some("menu_hide") => self.hide_suggestions(),
                 _ => {}
@@ -1098,6 +1126,10 @@ impl App {
             UserEvent::Ipc(src, body) => self.on_ipc(src, body),
             UserEvent::TabState(id, progress_only) => self.sync_tab(id, progress_only),
             UserEvent::FixedAlloc(x, y, w, h) => {
+                #[cfg(debug_assertions)]
+                if std::env::var_os("OZI_DEBUG_GEOM").is_some() {
+                    eprintln!("[alloc] {x},{y} {w}x{h}");
+                }
                 if w > 1 && h > 1 {
                     let new_size = (w as f64, h as f64);
                     if new_size != self.size {
@@ -1185,6 +1217,17 @@ impl App {
 }
 
 impl App {
+    /// Panele betik gönder; sayfa henüz yüklenmediyse hazır olana kadar beklet.
+    fn popup_eval(&mut self, js: String) {
+        if self.popup_ready {
+            if let Some(p) = &self.popup {
+                let _ = p.evaluate_script(&js);
+            }
+        } else {
+            self.popup_pending = Some(js);
+        }
+    }
+
     fn ensure_popup(&mut self) -> bool {
         if self.popup.is_some() {
             return true;
@@ -1214,6 +1257,13 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Paneli en üste al ve konumlandır (Fixed yeniden yerleşir; `layout` hedefleri yeniden uygular).
+    fn place_popup(&mut self, x: f64, y: f64, w: f64, h: f64) {
+        self.popup_rect = Some((x, y, w, h));
+        self.raise_popup();
+        self.layout();
     }
 
     /// GTK'de çocuk widget'lar eklenme sırasıyla çizilir; öneri listesini en üste almak için
@@ -1288,16 +1338,12 @@ impl App {
         self.sug = items;
         self.sug_sel = None;
         self.sug_q = q.to_string();
-        // GtkFixed çocukları yeniden eklenince konumu sıfırlanır: önce üste al, sonra yerleştir
-        self.raise_popup();
-        if let Some(p) = &self.popup {
-            let _ = p.set_bounds(self.at(x, y, w.max(240.0), h));
-        }
+        self.place_popup(x, y, w.max(240.0), h);
         let theme = self.popup_theme_js();
         if let Some(p) = &self.popup {
             let _ = p.set_visible(true);
-            let _ = p.evaluate_script(&format!("{theme}window.oziPop&&window.oziPop.set({},-1)", Value::Array(payload)));
         }
+        self.popup_eval(format!("{theme}window.oziPop&&window.oziPop.set({},-1)", Value::Array(payload)));
         self.popup_menu = false;
         self.sug_open = true;
     }
@@ -1457,16 +1503,13 @@ impl App {
                 }
             })
             .collect();
-        self.raise_popup();
-        if let Some(p) = &self.popup {
-            let _ = p.set_bounds(self.at(x, y, w, h));
-        }
+        self.place_popup(x, y, w, h);
         let theme = self.popup_theme_js();
         if let Some(p) = &self.popup {
             let _ = p.set_visible(true);
-            let _ = p.evaluate_script(&format!("{theme}window.oziPop&&window.oziPop.menu({})", Value::Array(payload)));
             let _ = p.focus();
         }
+        self.popup_eval(format!("{theme}window.oziPop&&window.oziPop.menu({})", Value::Array(payload)));
         self.popup_menu = true;
         self.sug_open = true;
     }
@@ -1501,6 +1544,19 @@ fn is_internal_url(u: &str) -> bool {
 }
 
 impl App {
+    /// Kapanış: pencereyi hemen gizle (dock/görev çubuğu simgesi anında kalksın), verileri kaydet ve
+    /// WebKit'in yavaş temizliğine (birkaç webview + uzantı arka planı ~6 sn sürebiliyordu) en fazla
+    /// 2 sn tanı; sonra süreci kesin sonlandır.
+    fn shutdown(&mut self) {
+        self.host.window.set_visible(false);
+        self.save_window_state();
+        self.flush();
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::process::exit(0);
+        });
+    }
+
     fn flush(&mut self) {
         if let Ok(mut u) = self.user.lock() {
             u.flush();
@@ -1856,12 +1912,12 @@ fn main() {
     };
 
     // Konteyner yerleştikçe (pencere boyutu, GNOME gölgeleri, büyütme) yerleşimi güncelle
+    let targets = layout::new();
     #[cfg(target_os = "linux")]
     {
-        use gtk::prelude::*;
         let p = proxy.clone();
-        host.fixed.connect_size_allocate(move |_, a| {
-            let _ = p.send_event(UserEvent::FixedAlloc(a.x(), a.y(), a.width(), a.height()));
+        layout::install(&host.fixed, targets.clone(), move |x, y, w, h| {
+            let _ = p.send_event(UserEvent::FixedAlloc(x, y, w, h));
         });
     }
 
@@ -1899,6 +1955,10 @@ fn main() {
         filter: None,
         find_open: false,
         popup: None,
+        popup_ready: false,
+        popup_rect: None,
+        targets,
+        popup_pending: None,
         sug: vec![],
         sug_sel: None,
         sug_q: String::new(),
@@ -1925,6 +1985,7 @@ fn main() {
         app.orig_dark = gtk::Settings::default().is_some_and(|s| s.is_gtk_application_prefer_dark_theme());
     }
     app.apply_theme();
+    app.ensure_popup(); // sayfa ilk kullanımdan önce yüklensin
     let p_keys = app.proxy.clone();
     keys::install(&app.host.window, move |a| {
         let _ = p_keys.send_event(UserEvent::Shortcut(a));
@@ -1971,13 +2032,93 @@ fn main() {
         app.create_tab_ex(&url, !restored || i == restore_active, private);
     }
 
-    #[cfg(debug_assertions)]
-    if std::env::var_os("OZI_DEBUG_MENU").is_some() {
-        app.show_menu(1260.0, 84.0);
+    // Menü / öneri listesini gerçek IPC yolundan, pencere yerleştikten sonra aç (yalnızca hata ayıklama)
+    #[cfg(all(debug_assertions, target_os = "linux"))]
+    {
+        let cmd = if std::env::var_os("OZI_DEBUG_MENU").is_some() {
+            Some(r#"{"cmd":"menu","x":1260,"y":84}"#.to_string())
+        } else {
+            std::env::var("OZI_DEBUG_SUGGEST")
+                .ok()
+                .map(|q| format!(r#"{{"cmd":"suggest","q":{},"x":70,"y":82,"w":640,"inline":false}}"#, json!(q)))
+        };
+        if let Some(c) = cmd {
+            let p = app.proxy.clone();
+            gtk::glib::timeout_add_seconds_local_once(3, move || {
+                let _ = p.send_event(UserEvent::Ipc(Src::Ui, c));
+            });
+        }
     }
-    #[cfg(debug_assertions)]
-    if let Ok(q) = std::env::var("OZI_DEBUG_SUGGEST") {
-        app.show_suggestions(&q, 70.0, 82.0, 640.0);
+
+    // Gerçek WebKit çizimini PNG'ye kaydet (yalnızca hata ayıklama): OZI_DEBUG_SHOT=<klasör>
+    // Masaüstünü değil, yalnızca uygulamanın kendi webview içeriğini yakalar.
+    #[cfg(all(debug_assertions, target_os = "linux"))]
+    if let Ok(dir) = std::env::var("OZI_DEBUG_SHOT") {
+        use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
+        use wry::WebViewExtUnix;
+        let mut views: Vec<(String, webkit2gtk::WebView)> = vec![("ui".into(), app.ui.webview())];
+        for (i, t) in app.tabs.iter().enumerate() {
+            views.push((format!("tab{i}"), t.wv.webview()));
+        }
+        if let Some(p) = &app.popup {
+            views.push(("popup".into(), p.webview()));
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        // OZI_DEBUG_UI_JS: arayüzde betik çalıştırıp animasyonun ara karelerini kaydet
+        if let Ok(js) = std::env::var("OZI_DEBUG_UI_JS") {
+            let ui_w = app.ui.webview();
+            let dir2 = dir.clone();
+            gtk::glib::timeout_add_seconds_local_once(4, move || {
+                let _ = ui_w.run_javascript(&js, None::<&gtk::gio::Cancellable>, |_| {});
+                for (ms, tag) in [(70u64, "a"), (200, "b"), (700, "c")] {
+                    let (w2, d2) = (ui_w.clone(), dir2.clone());
+                    gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || {
+                        let path = format!("{d2}/anim_{tag}.png");
+                        w2.snapshot(SnapshotRegion::Visible, SnapshotOptions::NONE, None::<&gtk::gio::Cancellable>, move |res| {
+                            if let Ok(surf) = res {
+                                if let Ok(img) = gtk::cairo::ImageSurface::try_from(surf) {
+                                    if let Ok(mut f) = std::fs::File::create(&path) {
+                                        let _ = img.write_to_png(&mut f);
+                                    }
+                                }
+                            }
+                        });
+                    });
+                }
+            });
+        }
+        gtk::glib::timeout_add_seconds_local_once(5, move || {
+            for (name, w) in views {
+                let path = format!("{dir}/{name}.png");
+                w.snapshot(SnapshotRegion::Visible, SnapshotOptions::NONE, None::<&gtk::gio::Cancellable>, move |res| match res {
+                    Ok(surf) => match gtk::cairo::ImageSurface::try_from(surf) {
+                        Ok(img) => match std::fs::File::create(&path).map(|mut f| img.write_to_png(&mut f)) {
+                            Ok(Ok(())) => eprintln!("[shot] {path} {}x{}", img.width(), img.height()),
+                            other => eprintln!("[shot] yazılamadı {path}: {other:?}"),
+                        },
+                        Err(_) => eprintln!("[shot] {path}: görüntü yüzeyi değil"),
+                    },
+                    Err(e) => eprintln!("[shot] {path}: {e}"),
+                });
+            }
+        });
+    }
+
+    // Kapanış yolu denemesi (yalnızca hata ayıklama): OZI_DEBUG_CLOSE=close|quit
+    #[cfg(all(debug_assertions, target_os = "linux"))]
+    if let Ok(mode) = std::env::var("OZI_DEBUG_CLOSE") {
+        use gtk::prelude::*;
+        use tao::platform::unix::WindowExtUnix;
+        let win = app.host.window.gtk_window().clone();
+        let p = app.proxy.clone();
+        gtk::glib::timeout_add_seconds_local_once(4, move || {
+            eprintln!("[close] {mode} tetikleniyor");
+            if mode == "close" {
+                win.close();
+            } else {
+                let _ = p.send_event(UserEvent::Ipc(Src::Popup, r#"{"cmd":"menu_pick","id":"quit"}"#.into()));
+            }
+        });
     }
 
     // Yerleşim ölçümü (yalnızca hata ayıklama): pencere ve widget konumları
@@ -1988,7 +2129,7 @@ fn main() {
         let win = app.host.window.gtk_window().clone();
         let vbox = app.host.window.default_vbox().cloned();
         let fixed = app.host.fixed.clone();
-        gtk::glib::timeout_add_seconds_local_once(3, move || {
+        gtk::glib::timeout_add_seconds_local_once(6, move || {
             let a = |w: &gtk::Widget| {
                 let al = w.allocation();
                 let (x, y) = w.translate_coordinates(&win, 0, 0).unwrap_or((-9999, -9999));
@@ -2009,16 +2150,14 @@ fn main() {
         *flow = ControlFlow::Wait;
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                app.save_window_state();
-                app.flush();
+                app.shutdown();
                 *flow = ControlFlow::Exit;
             }
             Event::WindowEvent { event: WindowEvent::Resized(sz), .. } => app.resize(sz),
             Event::UserEvent(ev) => {
                 app.on_user_event(ev);
                 if app.quit {
-                    app.save_window_state();
-                    app.flush();
+                    app.shutdown();
                     *flow = ControlFlow::Exit;
                 }
             }

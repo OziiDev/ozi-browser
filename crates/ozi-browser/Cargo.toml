@@ -15,6 +15,7 @@ url = "2.5.9"
 wry = { version = "0.57.3", features = ["devtools"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+cairo-rs = { version = "0.18", features = ["png"] }
 gtk = "0.18"
 rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
 webkit2gtk = "=2.0.2"

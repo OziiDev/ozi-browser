@@ -1,6 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Ozi Browser
+GenericName=Web Tarayıcı
 Comment=Rust ile yazılmış hafif tarayıcı
 Exec=ozi-browser %U
 Icon=ozi-browser
@@ -8,3 +9,13 @@ Terminal=false
 Categories=Network;WebBrowser;
 MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
 StartupWMClass=ozi-browser
+StartupNotify=true
+Actions=new-window;new-private-window;
+
+[Desktop Action new-window]
+Name=Yeni pencere
+Exec=ozi-browser
+
+[Desktop Action new-private-window]
+Name=Yeni gizli pencere
+Exec=ozi-browser --private
