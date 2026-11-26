@@ -127,6 +127,10 @@ Sıfırdan bir web motoru (HTML/CSS/JS, ağ, güvenlik) yıllarca süren bir iş
 - [ ] Yer imi klasörleri / yer imi çubuğu
 - [ ] İsteğe bağlı Servo arka ucu
 
+## Sorun bildirme
+
+Bir hata gördüyseniz ya da bir site düzgün açılmıyorsa [Issues](https://github.com/OziiDev/ozi-browser/issues) sayfasından bildirin: işletim sistemini, ekran kartını ve sorunun olduğu adresi yazmanız yeterli.
+
 ## Lisans
 
 MIT — bkz. [LICENSE](LICENSE).
