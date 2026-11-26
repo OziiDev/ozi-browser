@@ -4,113 +4,120 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ozi UI</title>
 <style>
+  /* Firefox (Proton) tarzı: sekmeler çerçeve üzerinde yuvarlatılmış kutular, araç çubuğu ve adres çubuğu düz */
   :root {
-    --bg: #131419; --bar: #1d1e25; --tab: #191a20; --tab-hover: #22232b; --fg: #eceef4; --muted: #8e91a1;
-    --accent: #ff7a2f; --accent2: #ff4d8d; --input: #12131800; --field: #14151b; --border: #2b2c35;
-    --hover: rgba(255,255,255,.08); --press: rgba(255,255,255,.14); --private: #8b6dff; --ease: cubic-bezier(.2,.8,.2,1);
+    --frame: #f0f0f4; --toolbar: #f9f9fb; --tab-sel: #ffffff; --field: #f0f0f4; --field-hover: #e7e7ec;
+    --fg: #15141a; --muted: #5b5b66; --border: rgba(0,0,0,.12); --hover: rgba(21,20,26,.08); --press: rgba(21,20,26,.14);
+    --accent: #3b8eea; --shadow: 0 1px 4px rgba(58,57,68,.22); --ease: cubic-bezier(.2,.8,.2,1);
   }
-  @media (prefers-color-scheme: light) {
-    :root { --bg: #dcdfe8; --bar: #f6f7fb; --tab: #e3e6ee; --tab-hover: #eceef5; --fg: #1b1c22; --muted: #686b7b;
-      --field: #e8ebf3; --border: #d3d6e0; --hover: rgba(0,0,0,.07); --press: rgba(0,0,0,.13); }
+  :root[data-theme="dark"] {
+    --frame: #1c1b22; --toolbar: #2b2a33; --tab-sel: #42414d; --field: #1c1b22; --field-hover: #3a3944;
+    --fg: #fbfbfe; --muted: #bfbfc9; --border: rgba(255,255,255,.12); --hover: rgba(251,251,254,.1); --press: rgba(251,251,254,.16);
+    --shadow: 0 1px 4px rgba(0,0,0,.4);
+  }
+  /* Gizli sekme: Firefox gibi mor çerçeve */
+  :root[data-private] {
+    --frame: #25003e; --toolbar: #3a1a63; --tab-sel: #52307f; --field: #25003e; --field-hover: #331255;
+    --fg: #fbfbfe; --muted: #d4c8ee; --border: rgba(255,255,255,.14); --hover: rgba(251,251,254,.12); --press: rgba(251,251,254,.2);
+    --accent: #c19bff;
   }
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
-  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg);
-    font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  html, body { height: 100%; overflow: hidden; background: var(--frame); color: var(--fg);
+    font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; transition: background-color .25s; }
   svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
   /* ---------- sekmeler ---------- */
-  #tabs { display: flex; align-items: flex-end; height: 38px; padding: 6px 8px 0; gap: 2px; }
-  .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 38px; flex: 0 1 220px; height: 32px;
-    padding: 0 6px 0 10px; border-radius: 10px 10px 0 0; background: var(--tab); color: var(--muted); cursor: default; overflow: hidden;
-    transition: background .18s var(--ease), color .18s var(--ease); }
-  .tab:hover { background: var(--tab-hover); color: var(--fg); }
-  .tab.active { background: var(--bar); color: var(--fg); }
-  .tab.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 0; height: 2px; border-radius: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2)); animation: grow .28s var(--ease); transform-origin: left; }
-  .tab.private.active::after { background: var(--private); }
-  .tab.entering { animation: tabIn .26s var(--ease); }
+  #tabs { display: flex; align-items: center; height: 38px; padding: 4px 8px 4px; gap: 3px; }
+  .tab { position: relative; display: flex; align-items: center; gap: 8px; min-width: 40px; flex: 0 1 225px; height: 30px;
+    padding: 0 4px 0 10px; border-radius: 7px; color: var(--muted); cursor: default; overflow: hidden;
+    transition: background-color .15s, color .15s, box-shadow .2s; }
+  .tab:hover { background: var(--hover); color: var(--fg); }
+  .tab.active { background: var(--tab-sel); color: var(--fg); box-shadow: var(--shadow); }
+  .tab.active::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0;
+    background: var(--accent); animation: grow .3s var(--ease); transform-origin: center; }
+  .tab.entering { animation: tabIn .28s var(--ease); }
   .tab.leaving { animation: tabOut .2s var(--ease) forwards; pointer-events: none; }
-  @keyframes tabIn { from { flex-basis: 0; opacity: 0; transform: translateY(8px) scale(.96); } }
-  @keyframes tabOut { to { flex-basis: 0; min-width: 0; opacity: 0; padding: 0; gap: 0; transform: scale(.9); } }
+  @keyframes tabIn { from { flex-basis: 0; opacity: 0; transform: scale(.9); } }
+  @keyframes tabOut { to { flex-basis: 0; min-width: 0; opacity: 0; padding: 0; gap: 0; transform: scale(.85); } }
   @keyframes grow { from { transform: scaleX(0); } }
-  .fav { position: relative; width: 16px; height: 16px; flex: none; border-radius: 5px; overflow: hidden; display: grid; place-items: center;
+  .fav { position: relative; width: 16px; height: 16px; flex: none; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
     font-size: 10px; font-weight: 700; color: #fff; }
-  .fav img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--tab); }
-  .fav .sp { position: absolute; inset: -1px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
-    animation: spin .7s linear infinite; display: none; background: rgba(0,0,0,.25); }
+  .fav img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--tab-sel); }
+  .tab:not(.active) .fav img { background: var(--frame); }
+  .fav .sp { position: absolute; inset: 0; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-top-color: var(--accent); animation: spin .7s linear infinite; display: none; background: var(--tab-sel); }
+  .tab:not(.active) .fav .sp { background: var(--frame); }
   .tab.loading .fav .sp { display: block; }
-  .tab.private .fav { outline: 2px solid var(--private); outline-offset: 1px; }
+  .tab.private .fav { outline: 2px solid var(--accent); outline-offset: 1px; }
   .tab .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
-  .tab .x { width: 20px; height: 20px; border-radius: 6px; border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center;
-    opacity: 0; transition: opacity .15s, background .15s; flex: none; }
-  .tab:hover .x, .tab.active .x { opacity: .8; }
+  .tab .x { width: 22px; height: 22px; border-radius: 5px; border: 0; background: none; color: inherit; cursor: pointer; display: grid; place-items: center;
+    opacity: 0; transition: opacity .15s, background-color .15s; flex: none; }
+  .tab:hover .x, .tab.active .x { opacity: .85; }
   .tab .x:hover { background: var(--press); opacity: 1; }
   .tab .x svg { width: 13px; height: 13px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #newtab { margin: 0 0 3px 4px; width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
-    display: grid; place-items: center; transition: background .15s, color .15s, transform .15s var(--ease); flex: none; }
-  #newtab:hover { background: var(--hover); color: var(--fg); transform: rotate(90deg); }
+  #newtab { margin-left: 2px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--fg); cursor: pointer;
+    display: grid; place-items: center; transition: background-color .15s, transform .25s var(--ease); flex: none; }
+  #newtab:hover { background: var(--hover); transform: rotate(90deg); }
 
   /* ---------- araç çubuğu ---------- */
-  #bar { position: relative; display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--border); }
-  .nb { position: relative; width: 32px; height: 32px; border: 0; border-radius: 9px; background: none; color: var(--fg); cursor: pointer; flex: none;
-    display: grid; place-items: center; transition: background .15s, transform .12s var(--ease), color .15s; }
+  #bar { position: relative; display: flex; align-items: center; gap: 2px; height: 48px; padding: 0 8px; background: var(--toolbar);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); transition: background-color .25s; }
+  .nb { position: relative; width: 32px; height: 32px; border: 0; border-radius: 6px; background: none; color: var(--fg); cursor: pointer; flex: none;
+    display: grid; place-items: center; transition: background-color .15s, transform .12s var(--ease), opacity .15s; }
   .nb:hover { background: var(--hover); }
-  .nb:active { background: var(--press); transform: scale(.9); }
+  .nb:active { background: var(--press); transform: scale(.92); }
+  .nb:disabled { opacity: .35; pointer-events: none; }
   .nb img { width: 18px; height: 18px; object-fit: contain; }
   .nb.spinning svg { animation: spin .45s var(--ease); }
+  #star { width: 28px; height: 28px; margin-right: -6px; }
   #star.on { color: var(--accent); }
   #star.on svg { fill: currentColor; }
-  #star.pop svg { animation: pop .4s var(--ease); }
+  #star.pop svg { animation: pop .42s var(--ease); }
   @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.45) rotate(-12deg); } 100% { transform: scale(1); } }
-  #omniwrap { position: relative; flex: 1; min-width: 80px; height: 34px; margin: 0 6px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
-    border-radius: 17px; background: var(--field); border: 1px solid transparent; transition: border-color .18s, box-shadow .2s, background .18s; }
-  #omniwrap:hover { border-color: var(--border); }
-  #omniwrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,122,47,.18); }
-  #omniwrap.private:focus-within { border-color: var(--private); box-shadow: 0 0 0 3px rgba(139,109,255,.22); }
+  #omniwrap { position: relative; flex: 1; min-width: 80px; height: 34px; margin: 0 6px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 10px;
+    border-radius: 8px; background: var(--field); border: 1px solid transparent;
+    transition: border-color .15s, box-shadow .18s, background-color .15s; }
+  #omniwrap:hover { background: var(--field-hover); }
+  #omniwrap:focus-within { background: var(--field); border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
   #sec { color: var(--muted); display: grid; place-items: center; transition: color .2s; }
   #sec svg { width: 15px; height: 15px; }
-  #sec.ok { color: #4cc38a; }
+  #sec.ok { color: #3fb27f; }
   #sec.bad { color: #e0a34a; }
   #omni { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: none; color: var(--fg); font-size: 14px;
     user-select: text; -webkit-user-select: text; }
-  #omni::selection { background: rgba(255,122,47,.35); }
-  #chip { flex: none; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 10px; background: var(--hover);
+  #omni::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+  #chip { flex: none; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 6px; background: var(--hover);
     opacity: 0; transform: translateX(6px); transition: opacity .18s, transform .18s var(--ease); pointer-events: none; white-space: nowrap; }
   #chip.show { opacity: 1; transform: none; }
   #exts { display: flex; gap: 2px; }
-  #sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex: none; }
-  #progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; opacity: 0; transition: opacity .25s; pointer-events: none; overflow: hidden; }
   #progress.on { opacity: 1; }
-  #progress::before { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 2px;
-    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent); animation: slide 1.1s ease-in-out infinite; }
-  #progress.private::before { background: linear-gradient(90deg, transparent, var(--private), transparent); }
-  @keyframes slide { from { left: -40%; } to { left: 100%; } }
+  #progress i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--accent); transition: width .3s var(--ease); }
+  #progress i::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 80px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.7)); animation: shimmer 1s linear infinite; }
+  @keyframes shimmer { from { transform: translateX(-100%); opacity: 0; } 30% { opacity: 1; } to { transform: translateX(0); opacity: 0; } }
 
   /* ---------- sayfada ara ---------- */
-  #find { display: none; align-items: center; gap: 6px; height: 40px; padding: 0 12px; background: var(--bar); border-bottom: 1px solid var(--border); }
+  #find { display: none; align-items: center; gap: 6px; height: 40px; padding: 0 12px; background: var(--toolbar); border-bottom: 1px solid var(--border); }
   #find.open { display: flex; animation: drop .22s var(--ease); }
   @keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
-  #fq { width: 260px; height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 14px; outline: none; background: var(--field);
-    color: var(--fg); font-size: 13px; user-select: text; -webkit-user-select: text; transition: border-color .18s, box-shadow .2s; }
-  #fq:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,122,47,.18); }
+  #fq { width: 260px; height: 28px; padding: 0 12px; border: 1px solid transparent; border-radius: 7px; outline: none; background: var(--field);
+    color: var(--fg); font-size: 13px; user-select: text; -webkit-user-select: text; transition: border-color .15s, box-shadow .18s; }
+  #fq:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
   #find .nb { width: 28px; height: 28px; }
   #find .nb svg { width: 16px; height: 16px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
-    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
     <symbol id="i-reload" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.5l2.95 6 6.55.95-4.75 4.62 1.12 6.53L12 17.5l-5.87 3.1 1.12-6.53L2.5 9.45l6.55-.95L12 2.5z"/></symbol>
-    <symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
-    <symbol id="i-bm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
-    <symbol id="i-dl" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
-    <symbol id="i-ext" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></symbol>
-    <symbol id="i-set" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
     <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="M21 21l-4.3-4.3"/></symbol>
@@ -120,23 +127,18 @@
 
   <div id="tabs"></div>
   <div id="bar">
-    <button class="nb" id="back" title="Geri (Alt+←)"><svg class="ic"><use href="#i-back"/></svg></button>
-    <button class="nb" id="fwd" title="İleri (Alt+→)"><svg class="ic"><use href="#i-fwd"/></svg></button>
+    <button class="nb" id="back" title="Geri (Alt+←)" disabled><svg class="ic"><use href="#i-back"/></svg></button>
+    <button class="nb" id="fwd" title="İleri (Alt+→)" disabled><svg class="ic"><use href="#i-fwd"/></svg></button>
     <button class="nb" id="reload" title="Yenile (Ctrl+R)"><svg class="ic"><use href="#i-reload"/></svg></button>
     <div id="omniwrap">
       <span id="sec"><svg class="ic"><use href="#i-search"/></svg></span>
       <input id="omni" type="text" spellcheck="false" autocomplete="off" placeholder="Ara ya da adres yaz">
       <span id="chip"></span>
+      <button class="nb" id="star" title="Yer imi ekle (Ctrl+D)"><svg class="ic"><use href="#i-star"/></svg></button>
     </div>
-    <button class="nb" id="star" title="Yer imi ekle (Ctrl+D)"><svg class="ic"><use href="#i-star"/></svg></button>
     <div id="exts"></div>
-    <span id="sep"></span>
-    <button class="nb" id="hist" title="Geçmiş (Ctrl+H)"><svg class="ic"><use href="#i-hist"/></svg></button>
-    <button class="nb" id="bms" title="Yer imleri"><svg class="ic"><use href="#i-bm"/></svg></button>
-    <button class="nb" id="dls" title="İndirmeler (Ctrl+J)"><svg class="ic"><use href="#i-dl"/></svg></button>
-    <button class="nb" id="extpage" title="Uzantılar"><svg class="ic"><use href="#i-ext"/></svg></button>
-    <button class="nb" id="setpage" title="Ayarlar"><svg class="ic"><use href="#i-set"/></svg></button>
-    <div id="progress"></div>
+    <button class="nb" id="menu" title="Menüyü aç"><svg class="ic"><use href="#i-menu"/></svg></button>
+    <div id="progress"><i></i></div>
   </div>
   <div id="find">
     <input id="fq" type="text" spellcheck="false" placeholder="Sayfada ara…">
@@ -145,18 +147,32 @@
     <button class="nb" id="fclose" title="Kapat (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
   </div>
 <script>
-  var S = { tabs: [], active: 0, exts: [], engines: [], bookmarked: false, find: false };
+  var S = { tabs: [], active: 0, exts: [], engines: [], bookmarked: false, find: false, back: false, fwd: false, theme: 'system', accent: 'blue' };
   var $ = function (id) { return document.getElementById(id); };
   var tabEls = {};
   var wasBookmarked = false;
+  var extSig = '';
+  var progHide = null;
+  var dark = window.matchMedia('(prefers-color-scheme: dark)');
   function post(o) { window.ipc.postMessage(JSON.stringify(o)); }
   function go(u) { post({ cmd: 'go', input: u }); }
   function icon(id) { return '<svg class="ic"><use href="#' + id + '"/></svg>'; }
 
+  function applyTheme() {
+    var root = document.documentElement;
+    var eff = S.theme === 'system' ? (dark.matches ? 'dark' : 'light') : S.theme;
+    root.setAttribute('data-theme', eff);
+    if (S.accentHex) root.style.setProperty('--accent', S.accentHex);
+    var cur = S.tabs.filter(function (t) { return t.id === S.active; })[0];
+    if (cur && cur.private) root.setAttribute('data-private', ''); else root.removeAttribute('data-private');
+  }
+  if (dark.addEventListener) dark.addEventListener('change', applyTheme);
+  applyTheme();
+
   function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
   function hue(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
 
-  function makeTab(t) {
+  function makeTab() {
     var el = document.createElement('div');
     el.className = 'tab entering';
     el.innerHTML = '<span class="fav"><b></b><span class="sp"></span></span><span class="t"></span><button class="x" title="Sekmeyi kapat">' + icon('i-x') + '</button>';
@@ -175,7 +191,8 @@
     var internal = t.url.indexOf('ozi://') === 0;
     var host = internal ? '' : hostOf(t.url);
     var label = t.title || (t.url === 'ozi://newtab' ? 'Yeni sekme' : (host || t.url)) || 'Yeni sekme';
-    el.querySelector('.t').textContent = label;
+    var tt = el.querySelector('.t');
+    if (tt.textContent !== label) tt.textContent = label;
     el.title = label;
     var fav = el.querySelector('.fav');
     var key = internal ? 'ozi' : host;
@@ -186,7 +203,7 @@
       fav.querySelector('b').textContent = key === 'ozi' || !key ? 'O' : key[0].toUpperCase();
       if (t.favicon && key && key !== 'ozi') {
         var img = new Image();
-        img.onload = function () { if (img.naturalWidth > 1) { fav.appendChild(img); } };
+        img.onload = function () { if (img.naturalWidth > 1 && el._host === key) { fav.appendChild(img); } };
         img.src = new URL(t.url).origin + '/favicon.ico';
       }
     }
@@ -212,10 +229,9 @@
     }
     S.tabs.forEach(function (t) {
       var el = tabEls[t.id];
-      if (!el) { el = makeTab(t); tabEls[t.id] = el; box.insertBefore(el, nt); }
+      if (!el) { el = makeTab(); tabEls[t.id] = el; box.insertBefore(el, nt); }
       updateTab(el, t);
     });
-    // sıra
     var ref = nt;
     for (var i = S.tabs.length - 1; i >= 0; i--) {
       var e2 = tabEls[S.tabs[i].id];
@@ -245,21 +261,35 @@
     var sec = $('sec'), ico = 'i-search', cls = '';
     if (url.indexOf('https://') === 0) { ico = 'i-lock'; cls = 'ok'; }
     else if (url.indexOf('http://') === 0) { ico = 'i-unlock'; cls = 'bad'; }
+    if (sec._ico !== ico) { sec._ico = ico; sec.innerHTML = icon(ico); }
     sec.className = cls;
-    sec.innerHTML = icon(ico);
+  }
+
+  // Gerçek yükleme ilerlemesi (WebKit estimated-load-progress)
+  function updateProgress(cur) {
+    var p = $('progress'), bar = p.firstElementChild;
+    if (cur && cur.loading) {
+      if (progHide) { clearTimeout(progHide); progHide = null; }
+      if (!p.classList.contains('on')) { bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth; bar.style.transition = ''; }
+      p.classList.add('on');
+      bar.style.width = Math.max(8, Math.min(95, (cur.progress || 0) * 100)) + '%';
+    } else if (p.classList.contains('on') && !progHide) {
+      bar.style.width = '100%';
+      progHide = setTimeout(function () { p.classList.remove('on'); progHide = null; }, 220);
+    }
   }
 
   function render() {
     syncTabs();
+    applyTheme();
     var cur = S.tabs.filter(function (t) { return t.id === S.active; })[0];
     if (cur) {
       if (document.activeElement !== $('omni')) {
-        $('omni').value = cur.url === 'ozi://newtab' ? '' : cur.url;
+        var v = cur.url === 'ozi://newtab' ? '' : cur.url;
+        if ($('omni').value !== v) $('omni').value = v;
       }
       updateSecurity(cur.url);
-      $('omniwrap').classList.toggle('private', !!cur.private);
-      $('progress').classList.toggle('on', !!cur.loading);
-      $('progress').classList.toggle('private', !!cur.private);
+      updateProgress(cur);
       var rl = $('reload');
       var wantStop = !!cur.loading;
       if (rl._stop !== wantStop) {
@@ -268,21 +298,28 @@
         rl.title = wantStop ? 'Durdur' : 'Yenile (Ctrl+R)';
       }
     }
+    $('back').disabled = !S.back;
+    $('fwd').disabled = !S.fwd;
     var st = $('star');
-    st.className = 'nb' + (S.bookmarked ? ' on' : '');
+    st.classList.toggle('on', !!S.bookmarked);
     if (S.bookmarked && !wasBookmarked) { st.classList.add('pop'); setTimeout(function () { st.classList.remove('pop'); }, 450); }
     wasBookmarked = S.bookmarked;
     $('find').className = S.find ? 'open' : '';
-    var ex = $('exts');
-    ex.textContent = '';
-    S.exts.forEach(function (e) {
-      var b = document.createElement('button');
-      b.className = 'nb'; b.title = e.name;
-      if (e.icon) { var i = document.createElement('img'); i.src = e.icon; i.onerror = function () { b.textContent = e.name[0] || '?'; i.remove(); }; b.appendChild(i); }
-      else b.textContent = (e.name || '?')[0];
-      b.onclick = function () { post({ cmd: 'ext_click', id: e.id }); };
-      ex.appendChild(b);
-    });
+    // Uzantı düğmeleri yalnızca değiştiyse yeniden çizilir (titremesin)
+    var sig = JSON.stringify(S.exts);
+    if (sig !== extSig) {
+      extSig = sig;
+      var ex = $('exts');
+      ex.textContent = '';
+      S.exts.forEach(function (e) {
+        var b = document.createElement('button');
+        b.className = 'nb'; b.title = e.name;
+        if (e.icon) { var i = document.createElement('img'); i.src = e.icon; i.onerror = function () { b.textContent = e.name[0] || '?'; i.remove(); }; b.appendChild(i); }
+        else b.textContent = (e.name || '?')[0];
+        b.onclick = function () { post({ cmd: 'ext_click', id: e.id }); };
+        ex.appendChild(b);
+      });
+    }
   }
 
   window.oziUi = {
@@ -291,7 +328,7 @@
     blurOmni: function () { $('omni').blur(); },
     // Öneri listesinde ok tuşlarıyla gezinirken adres çubuğunu seçili öğeyle doldur
     fill: function (text) { var o = $('omni'); o.value = text; try { o.setSelectionRange(text.length, text.length); } catch (e) {} updateChip(); },
-    // Satır içi tamamlama: yazılan metin bir ziyaret edilen adresin başıysa kalanını seçili ekle
+    // Satır içi tamamlama
     suggest: function (q, list) {
       var o = $('omni');
       if (o.value !== q || document.activeElement !== o) return;
@@ -325,23 +362,22 @@
   $('omni').addEventListener('focus', function () { this.select(); updateChip(); });
   $('omni').addEventListener('blur', function () {
     $('chip').classList.remove('show');
-    // Liste satırına tıklama mousedown ile seçilir; blur'dan sonra kapatmak için kısa gecikme
+    // Liste satırı mousedown ile seçilir; blur'dan sonra kapatmak için kısa gecikme
     setTimeout(function () { if (document.activeElement !== $('omni')) post({ cmd: 'sug_hide' }); }, 180);
   });
   $('back').onclick = function () { post({ cmd: 'back' }); };
   $('fwd').onclick = function () { post({ cmd: 'forward' }); };
-  $('reload').onclick = function () {
+  $('reload').onclick = function (e) {
     var b = this;
     if (b._stop) { post({ cmd: 'stop' }); return; }
     b.classList.remove('spinning'); void b.offsetWidth; b.classList.add('spinning');
-    post({ cmd: 'reload' });
+    post({ cmd: e.shiftKey ? 'hard_reload' : 'reload' });
   };
   $('star').onclick = function () { post({ cmd: 'bookmark' }); };
-  $('hist').onclick = function () { go('ozi://history'); };
-  $('bms').onclick = function () { go('ozi://bookmarks'); };
-  $('dls').onclick = function () { go('ozi://downloads'); };
-  $('extpage').onclick = function () { go('ozi://extensions'); };
-  $('setpage').onclick = function () { go('ozi://settings'); };
+  $('menu').onclick = function () {
+    var r = this.getBoundingClientRect();
+    post({ cmd: 'menu', x: r.right, y: r.bottom + 4 });
+  };
 
   $('fq').addEventListener('input', function () { post({ cmd: 'find', q: this.value, back: false, fresh: true }); });
   $('fq').addEventListener('keydown', function (e) {

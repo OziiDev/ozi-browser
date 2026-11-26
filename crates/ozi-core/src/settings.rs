@@ -4,6 +4,20 @@ use crate::search::{builtin_engines, SearchEngine, DEFAULT_ENGINE_ID};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub const THEMES: &[&str] = &["system", "light", "dark"];
+/// (kimlik, renk)
+pub const ACCENTS: &[(&str, &str)] = &[
+    ("blue", "#3b8eea"),
+    ("orange", "#ff7a2f"),
+    ("violet", "#8b6cff"),
+    ("green", "#22b58f"),
+    ("pink", "#ff4d8d"),
+];
+
+pub fn accent_hex(id: &str) -> &'static str {
+    ACCENTS.iter().find(|(i, _)| *i == id).map(|(_, c)| *c).unwrap_or(ACCENTS[0].1)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -14,6 +28,10 @@ pub struct Settings {
     pub block_ads: bool,
     /// Açılışta önceki oturumun sekmelerini geri yükle (varsayılan: kapalı)
     pub restore_session: bool,
+    /// "system" | "light" | "dark"
+    pub theme: String,
+    /// "blue" | "orange" | "violet" | "green" | "pink"
+    pub accent: String,
 }
 
 impl Default for Settings {
@@ -24,6 +42,8 @@ impl Default for Settings {
             homepage: "ozi://newtab".into(),
             block_ads: true,
             restore_session: false,
+            theme: "system".into(),
+            accent: "blue".into(),
         }
     }
 }
@@ -39,6 +59,12 @@ impl Settings {
         }
         if !s.engines.iter().any(|e| e.id == s.default_engine) {
             s.default_engine = s.engines[0].id.clone();
+        }
+        if !THEMES.contains(&s.theme.as_str()) {
+            s.theme = "system".into();
+        }
+        if !ACCENTS.iter().any(|(id, _)| *id == s.accent) {
+            s.accent = "blue".into();
         }
         s
     }
@@ -104,6 +130,11 @@ mod tests {
         std::fs::write(&p, br#"{"default_engine":"yok","engines":[]}"#).unwrap();
         let l = Settings::load(&p);
         assert_eq!(l.default_engine, "duckduckgo");
+        assert_eq!((l.theme.as_str(), l.accent.as_str()), ("system", "blue"));
+        std::fs::write(&p, br#"{"theme":"neon","accent":"nope"}"#).unwrap();
+        let l = Settings::load(&p);
+        assert_eq!((l.theme.as_str(), l.accent.as_str()), ("system", "blue"), "geçersiz değerler onarılır");
+        assert_eq!(accent_hex("orange"), "#ff7a2f");
         let _ = std::fs::remove_file(p);
     }
 }

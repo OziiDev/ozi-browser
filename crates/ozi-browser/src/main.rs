@@ -10,6 +10,7 @@ mod ext;
 mod keys;
 mod pages;
 mod tune;
+mod webstate;
 
 use ext::{ext_url, WebCtx, BACKGROUND_PAGE};
 use ozi_core::{
@@ -33,6 +34,8 @@ use tao::{
 };
 use wry::{NewWindowResponse, PageLoadEvent, Rect, WebContext, WebView, WebViewBuilder};
 
+pub(crate) type Wv = WebView;
+
 /// Üstteki arayüz çubuğunun (sekmeler + adres) mantıksal yüksekliği; sayfada ara çubuğu +40.
 const UI_BASE_H: f64 = 86.0;
 const FIND_H: f64 = 40.0;
@@ -47,8 +50,13 @@ enum Src {
     Popup,
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 enum UserEvent {
     Ipc(Src, String),
+    /// Linux: WebKit sinyali (sekme, yalnızca-ilerleme)
+    TabState(u64, bool),
+    /// Linux: webview'ların konteyneri (GtkFixed) yeniden yerleşti: x, y, genişlik, yükseklik
+    FixedAlloc(i32, i32, i32, i32),
     Title(u64, String),
     Nav(u64, String),
     Load(u64, bool, String),
@@ -75,6 +83,9 @@ struct Tab {
     url: String,
     title: String,
     loading: bool,
+    progress: f64,
+    can_back: bool,
+    can_forward: bool,
     private: bool,
 }
 
@@ -143,6 +154,44 @@ fn with_protocols<'a>(b: WebViewBuilder<'a>, need: bool, pages_ctx: &pages::Page
         .with_custom_protocol("ozi-ext".into(), move |_, req| ext::serve_ext(&m2, &req))
 }
 
+/// Platforma göre durum işleyicileri: Linux'ta WebKit sinyalleri (`webstate`), diğerlerinde wry olayları.
+trait StateHandlers<'a> {
+    fn pipe_state_handlers(
+        self,
+        id: u64,
+        nav: EventLoopProxy<UserEvent>,
+        title: EventLoopProxy<UserEvent>,
+        load: EventLoopProxy<UserEvent>,
+    ) -> WebViewBuilder<'a>;
+}
+
+impl<'a> StateHandlers<'a> for WebViewBuilder<'a> {
+    #[cfg(target_os = "linux")]
+    fn pipe_state_handlers(self, _: u64, _: EventLoopProxy<UserEvent>, _: EventLoopProxy<UserEvent>, _: EventLoopProxy<UserEvent>) -> WebViewBuilder<'a> {
+        self
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn pipe_state_handlers(
+        self,
+        id: u64,
+        nav: EventLoopProxy<UserEvent>,
+        title: EventLoopProxy<UserEvent>,
+        load: EventLoopProxy<UserEvent>,
+    ) -> WebViewBuilder<'a> {
+        self.with_navigation_handler(move |u| {
+            let _ = nav.send_event(UserEvent::Nav(id, u));
+            true
+        })
+        .with_document_title_changed_handler(move |t| {
+            let _ = title.send_event(UserEvent::Title(id, t));
+        })
+        .with_on_page_load_handler(move |ev, u| {
+            let _ = load.send_event(UserEvent::Load(id, matches!(ev, PageLoadEvent::Started), u));
+        })
+    }
+}
+
 fn now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -178,6 +227,8 @@ struct App {
     active: u64,
     next_id: u64,
     size: (f64, f64),
+    /// Konteynerin pencere içindeki konumu (GNOME gölge/başlık kenarlıkları yüzünden sıfır değildir)
+    origin: (f64, f64),
     settings: pages::SettingsRef,
     user: pages::UserRef,
     paths: Paths,
@@ -188,6 +239,12 @@ struct App {
     sug_sel: Option<usize>,
     sug_q: String,
     sug_open: bool,
+    /// Üst katman şu an menü mü gösteriyor (aksi halde öneri listesi)
+    popup_menu: bool,
+    menu_hidden_at: std::time::Instant,
+    last_ui_push: std::cell::Cell<std::time::Instant>,
+    /// Başlangıçtaki GTK koyu tema tercihi ("sistem" temasına dönmek için)
+    orig_dark: bool,
     /// Son kapatılan (gizli olmayan) sekme adresleri; Ctrl+Shift+T ile geri açılır
     closed: Vec<String>,
     last_flush: std::time::Instant,
@@ -221,12 +278,18 @@ impl App {
         UI_BASE_H + if self.find_open { FIND_H } else { 0.0 }
     }
 
+    /// Konteyner koordinatlarını pencere koordinatlarına çevirir: wry, GtkFixed içindeki webview'ları
+    /// doğrudan `size_allocate` ile yerleştirir ve konteynerin kendi ofsetini eklemez.
+    fn at(&self, x: f64, y: f64, w: f64, h: f64) -> Rect {
+        rect(x + self.origin.0, y + self.origin.1, w, h)
+    }
+
     fn content_rect(&self) -> Rect {
-        rect(0.0, self.ui_h(), self.size.0, self.size.1 - self.ui_h())
+        self.at(0.0, self.ui_h(), self.size.0, self.size.1 - self.ui_h())
     }
 
     fn layout(&self) {
-        let _ = self.ui.set_bounds(rect(0.0, 0.0, self.size.0, self.ui_h()));
+        let _ = self.ui.set_bounds(self.at(0.0, 0.0, self.size.0, self.ui_h()));
         let r = || self.content_rect();
         for t in &self.tabs {
             let _ = t.wv.set_bounds(r());
@@ -234,10 +297,16 @@ impl App {
     }
 
     fn resize(&mut self, sz: PhysicalSize<u32>) {
-        let s = self.host.window.scale_factor();
-        self.size = (sz.width as f64 / s, sz.height as f64 / s);
         self.hide_suggestions();
-        self.layout();
+        // Linux'ta boyut `FixedAlloc` ile konteynerden okunur (pencere boyutu gölge/başlığı da içerir)
+        #[cfg(not(target_os = "linux"))]
+        {
+            let s = self.host.window.scale_factor();
+            self.size = (sz.width as f64 / s, sz.height as f64 / s);
+            self.layout();
+        }
+        #[cfg(target_os = "linux")]
+        let _ = sz;
     }
 
     fn target(&self, src: &Src) -> Option<(&WebView, &WebCtx)> {
@@ -268,7 +337,7 @@ impl App {
         let tabs: Vec<Value> = self
             .tabs
             .iter()
-            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading, "private": t.private,
+            .map(|t| json!({"id": t.id, "title": t.title, "url": ext::to_display_url(&t.url), "loading": t.loading, "progress": t.progress, "private": t.private,
                 "favicon": !t.private && (t.url.starts_with("http://") || t.url.starts_with("https://"))}))
             .collect();
         let exts: Vec<Value> = self
@@ -297,8 +366,12 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
+        let (can_back, can_fwd) = self.tab(self.active).map(|t| (t.can_back, t.can_forward)).unwrap_or_default();
+        let (theme, accent) = self.settings.read().map(|s| (s.theme.clone(), s.accent.clone())).unwrap_or_default();
         let state = json!({"tabs": tabs, "active": self.active, "exts": exts, "engines": engines,
-            "bookmarked": bookmarked, "find": self.find_open});
+            "bookmarked": bookmarked, "find": self.find_open, "back": can_back, "fwd": can_fwd,
+            "theme": theme, "accent": accent, "accentHex": ozi_core::settings::accent_hex(&accent)});
+        self.last_ui_push.set(std::time::Instant::now());
         let _ = self.ui.evaluate_script(&format!("window.oziUi&&window.oziUi.state({state})"));
         if let Some(t) = self.tab(self.active) {
             let title = if t.title.is_empty() { "Ozi Browser".to_string() } else { format!("{} — Ozi", t.title) };
@@ -350,16 +423,7 @@ impl App {
                 .with_ipc_handler(move |req| {
                     let _ = p_ipc.send_event(UserEvent::Ipc(Src::Tab(id), req.into_body()));
                 })
-                .with_navigation_handler(move |u| {
-                    let _ = p_nav.send_event(UserEvent::Nav(id, u));
-                    true
-                })
-                .with_document_title_changed_handler(move |t| {
-                    let _ = p_title.send_event(UserEvent::Title(id, t));
-                })
-                .with_on_page_load_handler(move |ev, u| {
-                    let _ = p_load.send_event(UserEvent::Load(id, matches!(ev, PageLoadEvent::Started), u));
-                })
+                .pipe_state_handlers(id, p_nav, p_title, p_load)
                 .with_new_window_req_handler(move |u, _| {
                     let _ = p_new.send_event(UserEvent::NewTab(u));
                     NewWindowResponse::Deny
@@ -395,7 +459,8 @@ impl App {
         }
         blocking::apply(&wv, self.filter);
         tune::tune(&wv);
-        self.tabs.push(Tab { id, wv, ctx, url: real, title: String::new(), loading: true, private });
+        webstate::watch(&wv, id, self.proxy.clone());
+        self.tabs.push(Tab { id, wv, ctx, url: real, title: String::new(), loading: true, progress: 0.0, can_back: false, can_forward: false, private });
         if activate {
             self.active = id;
             if let Some(t) = self.tab(id) {
@@ -829,10 +894,15 @@ impl App {
         let Ok(v) = serde_json::from_str::<Value>(&body) else { return };
         if src == Src::Popup {
             // Öneri listesi yalnızca "bu satırı seç" diyebilir.
-            if v["cmd"].as_str() == Some("sug_pick") {
-                if let Some(i) = v["i"].as_u64() {
-                    self.sug_pick(i as usize);
+            match v["cmd"].as_str() {
+                Some("sug_pick") => {
+                    if let Some(i) = v["i"].as_u64() {
+                        self.sug_pick(i as usize);
+                    }
                 }
+                Some("menu_pick") => self.menu_pick(v["id"].as_str().unwrap_or("")),
+                Some("menu_hide") => self.hide_suggestions(),
+                _ => {}
             }
             return;
         }
@@ -854,7 +924,11 @@ impl App {
         match v["cmd"].as_str().unwrap_or("") {
             "ready" => self.push_ui(),
             "private_tab" => self.on_shortcut(keys::Action::PrivateTab),
-            "stop" => self.eval_active("window.stop()"),
+            "stop" => {
+                if let Some(t) = self.tab(self.active) {
+                    webstate::stop(&t.wv);
+                }
+            }
             "suggest" => {
                 let q = s_arg("q");
                 let list: Vec<Value> = self
@@ -873,6 +947,15 @@ impl App {
                 self.show_suggestions(&q, x, y, w);
             }
             "sug_move" => self.sug_move(v["d"].as_i64().unwrap_or(1)),
+            "hard_reload" => self.reload_active(true),
+            "menu" => {
+                // Düğmeye ikinci tıklama: açık menü önce odak kaybıyla kapanmış olabilir
+                if (self.sug_open && self.popup_menu) || self.menu_hidden_at.elapsed().as_millis() < 250 {
+                    self.hide_suggestions();
+                } else {
+                    self.show_menu(v["x"].as_f64().unwrap_or(self.size.0 - 10.0), v["y"].as_f64().unwrap_or(84.0));
+                }
+            }
             "sug_hide" => self.hide_suggestions(),
             "bookmark" => self.toggle_bookmark(),
             "find_toggle" => self.set_find(!self.find_open),
@@ -928,13 +1011,9 @@ impl App {
                     self.switch_tab(id)
                 }
             }
-            "back" => self.eval_active("history.back()"),
-            "forward" => self.eval_active("history.forward()"),
-            "reload" => {
-                if let Some(t) = self.tab(self.active) {
-                    let _ = t.wv.reload();
-                }
-            }
+            "back" => self.nav_back(),
+            "forward" => self.nav_forward(),
+            "reload" => self.reload_active(false),
             "ext_click" => self.ext_click(&s_arg("id")),
             "ext_options" => {
                 let id = s_arg("id");
@@ -1017,6 +1096,18 @@ impl App {
     fn on_user_event(&mut self, ev: UserEvent) {
         match ev {
             UserEvent::Ipc(src, body) => self.on_ipc(src, body),
+            UserEvent::TabState(id, progress_only) => self.sync_tab(id, progress_only),
+            UserEvent::FixedAlloc(x, y, w, h) => {
+                if w > 1 && h > 1 {
+                    let new_size = (w as f64, h as f64);
+                    if new_size != self.size {
+                        self.hide_suggestions();
+                    }
+                    self.origin = (x as f64, y as f64);
+                    self.size = new_size;
+                    self.layout();
+                }
+            }
             UserEvent::Title(id, title) => {
                 let mut record = None;
                 if let Some(t) = self.tab_mut(id) {
@@ -1150,6 +1241,13 @@ impl App {
                 let _ = p.set_visible(false);
             }
             self.sug_open = false;
+            if self.popup_menu {
+                self.menu_hidden_at = std::time::Instant::now();
+                if let Some(t) = self.tab(self.active) {
+                    let _ = t.wv.focus();
+                }
+            }
+            self.popup_menu = false;
         }
         self.sug.clear();
         self.sug_sel = None;
@@ -1190,14 +1288,17 @@ impl App {
         self.sug = items;
         self.sug_sel = None;
         self.sug_q = q.to_string();
-        if let Some(p) = &self.popup {
-            let _ = p.set_bounds(rect(x, y, w.max(240.0), h));
-        }
+        // GtkFixed çocukları yeniden eklenince konumu sıfırlanır: önce üste al, sonra yerleştir
         self.raise_popup();
         if let Some(p) = &self.popup {
-            let _ = p.set_visible(true);
-            let _ = p.evaluate_script(&format!("window.oziPop&&window.oziPop.set({},-1)", Value::Array(payload)));
+            let _ = p.set_bounds(self.at(x, y, w.max(240.0), h));
         }
+        let theme = self.popup_theme_js();
+        if let Some(p) = &self.popup {
+            let _ = p.set_visible(true);
+            let _ = p.evaluate_script(&format!("{theme}window.oziPop&&window.oziPop.set({},-1)", Value::Array(payload)));
+        }
+        self.popup_menu = false;
         self.sug_open = true;
     }
 
@@ -1224,6 +1325,174 @@ impl App {
         let Some(url) = self.sug.get(i).map(|s| s.url.clone()) else { return };
         self.navigate(self.active, &url);
         let _ = self.ui.evaluate_script("window.oziUi&&window.oziUi.blurOmni()");
+    }
+}
+
+impl App {
+    fn nav_back(&self) {
+        if let Some(t) = self.tab(self.active) {
+            webstate::back(&t.wv);
+        }
+    }
+
+    fn nav_forward(&self) {
+        if let Some(t) = self.tab(self.active) {
+            webstate::forward(&t.wv);
+        }
+    }
+
+    fn reload_active(&self, hard: bool) {
+        if let Some(t) = self.tab(self.active) {
+            webstate::reload(&t.wv, hard);
+        }
+    }
+
+    /// WebKit sinyali geldiğinde sekme durumunu gerçek değerlerden yeniden oku.
+    fn sync_tab(&mut self, id: u64, progress_only: bool) {
+        let Some(t) = self.tab(id) else { return };
+        let snap = webstate::snapshot(&t.wv);
+        let (old_url, old_loading) = (t.url.clone(), t.loading);
+        let Some(t) = self.tab_mut(id) else { return };
+        if let Some(u) = snap.url.filter(|u| !u.is_empty() && u != "about:blank") {
+            t.url = u;
+        }
+        t.title = snap.title.clone();
+        t.loading = snap.loading;
+        t.progress = snap.progress;
+        t.can_back = snap.can_back;
+        t.can_forward = snap.can_forward;
+        let url = t.url.clone();
+        let private = t.private;
+        #[cfg(debug_assertions)]
+        if std::env::var_os("OZI_DEBUG_STATE").is_some() {
+            eprintln!(
+                "[state] tab {id} loading={} progress={:.2} back={} fwd={} url={url}",
+                snap.loading, snap.progress, snap.can_back, snap.can_forward
+            );
+        }
+        let finished = old_loading && !snap.loading;
+        let url_changed = url != old_url;
+        if !private && !is_internal_url(&url) && !snap.title.is_empty() {
+            if let Ok(mut u) = self.user.lock() {
+                u.set_title(&url, &snap.title);
+            }
+        }
+        if finished {
+            self.record_visit(id);
+        }
+        if finished || url_changed {
+            if let Some(t) = self.tab(id) {
+                let tj = self.tab_json(t);
+                let change = if finished { json!({"status": "complete", "url": t.url}) } else { json!({"url": t.url}) };
+                self.fire_bg_all("tabs.onUpdated", json!([id, change, tj]));
+            }
+        }
+        // İlerleme çubuğu güncellemelerini kıs; diğer her değişiklik hemen yansır
+        if progress_only && self.last_ui_push.get().elapsed().as_millis() < 50 {
+            return;
+        }
+        self.push_ui();
+    }
+
+    /// Tema: GTK'nin koyu tercihi sayfalardaki `prefers-color-scheme`'i ve yerel pencereleri etkiler.
+    fn apply_theme(&self) {
+        if let Ok(s) = self.settings.read() {
+            pages::set_theme(&s.theme, &s.accent);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use gtk::prelude::GtkSettingsExt;
+            if let Some(gs) = gtk::Settings::default() {
+                let theme = self.settings.read().map(|s| s.theme.clone()).unwrap_or_default();
+                gs.set_gtk_application_prefer_dark_theme(match theme.as_str() {
+                    "dark" => true,
+                    "light" => false,
+                    _ => self.orig_dark,
+                });
+            }
+        }
+    }
+}
+
+impl App {
+    fn popup_theme_js(&self) -> String {
+        let (theme, accent) = self.settings.read().map(|s| (s.theme.clone(), s.accent.clone())).unwrap_or_default();
+        format!("window.oziPop&&window.oziPop.theme({},{});", json!(theme), json!(ozi_core::settings::accent_hex(&accent)))
+    }
+
+    /// Hamburger menüsü: (kimlik, etiket, kısayol, simge); kimlik "-" ayırıcıdır.
+    fn show_menu(&mut self, x_right: f64, y: f64) {
+        const MENU: &[(&str, &str, &str, &str)] = &[
+            ("newtab", "Yeni sekme", "Ctrl+T", "plus"),
+            ("private", "Yeni gizli sekme", "Ctrl+Shift+N", "private"),
+            ("-", "", "", ""),
+            ("history", "Geçmiş", "Ctrl+H", "history"),
+            ("bookmarks", "Yer imleri", "", "bookmark"),
+            ("downloads", "İndirmeler", "Ctrl+J", "download"),
+            ("extensions", "Uzantılar", "", "ext"),
+            ("-", "", "", ""),
+            ("find", "Sayfada ara", "Ctrl+F", "find"),
+            ("print", "Yazdır…", "", "print"),
+            ("devtools", "Geliştirici araçları", "F12", "code"),
+            ("fullscreen", "Tam ekran", "F11", "full"),
+            ("-", "", "", ""),
+            ("settings", "Ayarlar", "", "settings"),
+            ("quit", "Çık", "", "quit"),
+        ];
+        if !self.ensure_popup() {
+            return;
+        }
+        self.hide_suggestions();
+        let rows = MENU.iter().filter(|m| m.0 != "-").count() as f64;
+        let seps = MENU.len() as f64 - rows;
+        let (w, h) = (270.0, rows * 32.0 + seps * 11.0 + 16.0);
+        let x = (x_right - w).max(6.0);
+        let payload: Vec<Value> = MENU
+            .iter()
+            .map(|(id, label, key, icon)| {
+                if *id == "-" {
+                    json!({"sep": true})
+                } else {
+                    json!({"id": id, "label": label, "key": key, "icon": icon})
+                }
+            })
+            .collect();
+        self.raise_popup();
+        if let Some(p) = &self.popup {
+            let _ = p.set_bounds(self.at(x, y, w, h));
+        }
+        let theme = self.popup_theme_js();
+        if let Some(p) = &self.popup {
+            let _ = p.set_visible(true);
+            let _ = p.evaluate_script(&format!("{theme}window.oziPop&&window.oziPop.menu({})", Value::Array(payload)));
+            let _ = p.focus();
+        }
+        self.popup_menu = true;
+        self.sug_open = true;
+    }
+
+    fn menu_pick(&mut self, id: &str) {
+        self.hide_suggestions();
+        use keys::Action::*;
+        match id {
+            "newtab" => self.on_shortcut(NewTab),
+            "private" => self.on_shortcut(PrivateTab),
+            "history" => self.open_internal("ozi://history"),
+            "bookmarks" => self.open_internal("ozi://bookmarks"),
+            "downloads" => self.open_internal("ozi://downloads"),
+            "extensions" => self.open_internal("ozi://extensions"),
+            "settings" => self.open_internal("ozi://settings"),
+            "find" => self.on_shortcut(Find),
+            "print" => {
+                if let Some(t) = self.tab(self.active) {
+                    let _ = t.wv.print();
+                }
+            }
+            "devtools" => self.on_shortcut(DevTools),
+            "fullscreen" => self.on_shortcut(Fullscreen),
+            "quit" => self.quit = true,
+            _ => {}
+        }
     }
 }
 
@@ -1371,9 +1640,10 @@ impl App {
             }
             CloseTab => self.close_tab(self.active),
             FocusOmni => focus_omni(self),
-            Reload => self.reload_tab(self.active),
-            Back => self.eval_active("history.back()"),
-            Forward => self.eval_active("history.forward()"),
+            Reload => self.reload_active(false),
+            HardReload => self.reload_active(true),
+            Back => self.nav_back(),
+            Forward => self.nav_forward(),
             NextTab => rotate(self, 1),
             PrevTab => rotate(self, -1),
             GotoTab(i) => {
@@ -1507,11 +1777,19 @@ impl App {
             homepage,
             block_ads: v["block_ads"].as_bool().unwrap_or(true),
             restore_session: v["restore_session"].as_bool().unwrap_or(false),
+            theme: v["theme"].as_str().filter(|t| ozi_core::settings::THEMES.contains(t)).unwrap_or("system").to_string(),
+            accent: v["accent"]
+                .as_str()
+                .filter(|a| ozi_core::settings::ACCENTS.iter().any(|(id, _)| id == a))
+                .unwrap_or("blue")
+                .to_string(),
         };
         new.save(&self.paths.settings_file()).map_err(|e| e.to_string())?;
         if let Ok(mut s) = self.settings.write() {
             *s = new;
         }
+        self.apply_theme();
+        self.push_ui();
         self.rebuild_filter(false);
         Ok(())
     }
@@ -1538,8 +1816,21 @@ fn main() {
                 v["max"].as_bool().unwrap_or(false),
             )
         })
-        .unwrap_or((1280.0, 800.0, false));
+        .unwrap_or((0.0, 0.0, false));
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    // Varsayılan boyut ekrana sığmalı (1366x768 gibi küçük ekranlarda 1280x800 taşıyordu)
+    let (win_w, win_h) = if win_w > 0.0 {
+        (win_w, win_h)
+    } else {
+        event_loop
+            .primary_monitor()
+            .map(|m| {
+                let sc = m.scale_factor();
+                (m.size().width as f64 / sc, m.size().height as f64 / sc)
+            })
+            .map(|(mw, mh)| ((mw - 80.0).clamp(640.0, 1280.0), (mh - 150.0).clamp(420.0, 800.0)))
+            .unwrap_or((1280.0, 800.0))
+    };
     let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
         .with_title("Ozi Browser")
@@ -1557,14 +1848,22 @@ fn main() {
         fixed.show_all();
         fixed
     };
-    let scale = window.scale_factor();
-    let phys = window.inner_size();
-    let size = (phys.width as f64 / scale, phys.height as f64 / scale);
+    let size = (win_w, win_h);
     let host = Host {
         window,
         #[cfg(target_os = "linux")]
         fixed,
     };
+
+    // Konteyner yerleştikçe (pencere boyutu, GNOME gölgeleri, büyütme) yerleşimi güncelle
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        let p = proxy.clone();
+        host.fixed.connect_size_allocate(move |_, a| {
+            let _ = p.send_event(UserEvent::FixedAlloc(a.x(), a.y(), a.width(), a.height()));
+        });
+    }
 
     let mut web_ctx = WebContext::new(Some(paths.profile_dir()));
     let ext_map: ext::ExtMap = Arc::new(RwLock::new(HashMap::new()));
@@ -1592,7 +1891,8 @@ fn main() {
         tabs: vec![],
         active: 0,
         next_id: 1,
-        size,
+        size: (win_w, win_h),
+        origin: (0.0, 0.0),
         settings: settings_ref.clone(),
         user,
         paths: paths.clone(),
@@ -1603,6 +1903,10 @@ fn main() {
         sug_sel: None,
         sug_q: String::new(),
         sug_open: false,
+        popup_menu: false,
+        menu_hidden_at: std::time::Instant::now(),
+        last_ui_push: std::cell::Cell::new(std::time::Instant::now()),
+        orig_dark: false,
         closed: vec![],
         last_flush: std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(60))
@@ -1615,6 +1919,12 @@ fn main() {
         just_installed: HashSet::new(),
         quit: false,
     };
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::GtkSettingsExt;
+        app.orig_dark = gtk::Settings::default().is_some_and(|s| s.is_gtk_application_prefer_dark_theme());
+    }
+    app.apply_theme();
     let p_keys = app.proxy.clone();
     keys::install(&app.host.window, move |a| {
         let _ = p_keys.send_event(UserEvent::Shortcut(a));
@@ -1662,8 +1972,37 @@ fn main() {
     }
 
     #[cfg(debug_assertions)]
+    if std::env::var_os("OZI_DEBUG_MENU").is_some() {
+        app.show_menu(1260.0, 84.0);
+    }
+    #[cfg(debug_assertions)]
     if let Ok(q) = std::env::var("OZI_DEBUG_SUGGEST") {
         app.show_suggestions(&q, 70.0, 82.0, 640.0);
+    }
+
+    // Yerleşim ölçümü (yalnızca hata ayıklama): pencere ve widget konumları
+    #[cfg(all(debug_assertions, target_os = "linux"))]
+    if std::env::var_os("OZI_DEBUG_GEOM").is_some() {
+        use gtk::prelude::*;
+        use tao::platform::unix::WindowExtUnix;
+        let win = app.host.window.gtk_window().clone();
+        let vbox = app.host.window.default_vbox().cloned();
+        let fixed = app.host.fixed.clone();
+        gtk::glib::timeout_add_seconds_local_once(3, move || {
+            let a = |w: &gtk::Widget| {
+                let al = w.allocation();
+                let (x, y) = w.translate_coordinates(&win, 0, 0).unwrap_or((-9999, -9999));
+                format!("alloc=({},{} {}x{}) win-rel=({x},{y})", al.x(), al.y(), al.width(), al.height())
+            };
+            eprintln!("[geom] pencere {}x{} ", win.allocated_width(), win.allocated_height());
+            if let Some(v) = &vbox {
+                eprintln!("[geom] vbox   {}", a(v.upcast_ref()));
+            }
+            eprintln!("[geom] fixed  {}", a(fixed.upcast_ref()));
+            for (i, c) in fixed.children().iter().enumerate() {
+                eprintln!("[geom] cocuk{i} {} visible={}", a(c), c.is_visible());
+            }
+        });
     }
 
     event_loop.run(move |event, _, flow| {

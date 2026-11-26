@@ -8,7 +8,7 @@ Linux'ta WebKitGTK, Windows'ta WebView2 üzerinde çalışır; arayüz, sekmeler
 - **Reklam/izleyici engelleme (Linux):** yerleşik alan adı listesi + uzantıların `declarativeNetRequest` statik kuralları, WebKit içerik filtresi olarak uygulanır.
 - **Geçmiş, yer imleri, indirmeler, gizli sekme, sayfada ara, ayarlar** (arama motorlarını düzenleme dahil). Pencere boyutu hatırlanır; istenirse açılışta önceki sekmeler geri yüklenir (Ayarlar). Kapatılan sekme `Ctrl+Shift+T` ile geri açılır.
 - **Akıcılık:** WebKit yumuşak kaydırma, sayfa önbelleği (anında geri/ileri) ve tarayıcı önbellek modu açık.
-- **Arayüz:** açık/koyu tema (sistemi izler), sekme açılış/kapanış animasyonları, favicon'lar, yükleme çubuğu, adres çubuğunda açılır öneri listesi (yer imleri + geçmiş, ok tuşlarıyla gezinme), satır içi tamamlama ve "hangi motorla aranacak" çipi, hareketli yeni sekme sayfası (saat, en çok ziyaret edilen siteler). `prefers-reduced-motion` açıksa animasyonlar kapanır.
+- **Arayüz (Firefox/Proton tarzı):** yuvarlatılmış sekmeler, düz araç çubuğu, yıldız adres çubuğunun içinde, hamburger menü (yeni sekme, gizli sekme, geçmiş, yer imleri, indirmeler, uzantılar, ara, yazdır, geliştirici araçları, tam ekran, ayarlar). **Tema:** Sistem / Açık / Koyu + 5 vurgu rengi (Ayarlar'da canlı önizleme; sitelerin `prefers-color-scheme` değerini de değiştirir). Gizli sekmede Firefox gibi mor çerçeve. Sekme açılış/kapanış animasyonları, gerçek yükleme ilerleme çubuğu, favicon'lar, geri/ileri düğmelerinin etkin/pasif durumu, adres çubuğunda açılır öneri listesi, satır içi tamamlama ve "hangi motorla aranacak" çipi, yeni sekme sayfası (saat, en çok ziyaret edilen siteler). `prefers-reduced-motion` açıksa animasyonlar kapanır.
 - **Küçük ve hızlı açılış:** Electron/Chromium gömmez; sistemin web motorunu kullanır. Release profili `lto="fat"`, `codegen-units=1`, `panic="abort"`, `strip`.
 - **Windows:** imzasız `.exe` (GitHub Actions ile derlenir). SmartScreen uyarısı normaldir.
 
@@ -49,7 +49,8 @@ Kısayollar (Linux'ta sayfa odaktayken de çalışır; Windows'ta yalnızca aray
 | `Ctrl+T` | yeni sekme | `Ctrl+Shift+N` | gizli sekme |
 | `Ctrl+W` | sekmeyi kapat | `Ctrl+Tab` / `Ctrl+Shift+Tab` | sonraki / önceki sekme |
 | `Ctrl+1…8`, `Ctrl+9` | n. sekme / son sekme | `Ctrl+L` | adres çubuğu |
-| `Ctrl+R`, `F5` | yenile | `Alt+←/→` | geri / ileri |
+| `Ctrl+R`, `F5` | yenile | `Ctrl+Shift+R` | önbelleği atlayarak yenile |
+| `Alt+←/→` | geri / ileri | | |
 | `Ctrl+D` | yer imi ekle/kaldır | `Ctrl+F` | sayfada ara (`Enter`/`Shift+Enter`, `Esc`) |
 | `Ctrl+H` | geçmiş | `Ctrl+J` | indirmeler |
 | `F11` | tam ekran | `F12` | geliştirici araçları |

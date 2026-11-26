@@ -2,14 +2,17 @@
 <html lang="tr">
 <meta charset="utf-8">
 <style>
-  :root { --bar: #1d1e25; --fg: #eceef4; --muted: #8e91a1; --accent: #ff7a2f; --accent2: #ff4d8d; --border: #2b2c35; --hover: rgba(255,255,255,.07); --sel: rgba(255,122,47,.16); --ease: cubic-bezier(.2,.8,.2,1); }
-  @media (prefers-color-scheme: light) { :root { --bar: #f6f7fb; --fg: #1b1c22; --muted: #686b7b; --border: #d3d6e0; --hover: rgba(0,0,0,.05); --sel: rgba(255,122,47,.16); } }
+  :root { --panel: #ffffff; --fg: #15141a; --muted: #5b5b66; --border: rgba(0,0,0,.16); --hover: rgba(21,20,26,.07); --sel: color-mix(in srgb, var(--accent) 18%, transparent); --accent: #3b8eea; --ease: cubic-bezier(.2,.8,.2,1); }
+  :root[data-theme="dark"] { --panel: #2b2a33; --fg: #fbfbfe; --muted: #bfbfc9; --border: rgba(255,255,255,.16); --hover: rgba(251,251,254,.1); }
   * { box-sizing: border-box; margin: 0; user-select: none; -webkit-user-select: none; }
-  html, body { height: 100%; overflow: hidden; background: var(--bar); color: var(--fg); font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 14px 14px; padding: 4px; }
+  html, body { height: 100%; overflow: hidden; background: var(--panel); color: var(--fg); font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { border: 1px solid var(--border); padding: 4px; }
+  body.sug { border-top: 0; border-radius: 0 0 10px 10px; }
+  body.menu { border-radius: 10px; padding: 6px; animation: panel .16s var(--ease); transform-origin: top right; }
+  @keyframes panel { from { opacity: 0; transform: scale(.96) translateY(-4px); } }
   #list { display: flex; flex-direction: column; gap: 1px; }
-  .it { display: flex; align-items: center; gap: 11px; height: 36px; padding: 0 10px; border-radius: 9px; cursor: default; animation: in .16s var(--ease) both;
-    animation-delay: calc(var(--i) * 22ms); transition: background .12s; }
+  .it { display: flex; align-items: center; gap: 11px; height: 36px; padding: 0 10px; border-radius: 7px; cursor: default; animation: in .16s var(--ease) both;
+    animation-delay: calc(var(--i) * 22ms); transition: background-color .12s; }
   .it:hover { background: var(--hover); }
   .it.sel { background: var(--sel); }
   @keyframes in { from { opacity: 0; transform: translateY(-5px); } }
@@ -19,19 +22,39 @@
   .ti { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 62%; }
   .ur { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; flex: 1; min-width: 0; }
   .tag { font-size: 11px; color: var(--muted); flex: none; }
+  /* menü */
+  .mi { display: flex; align-items: center; gap: 12px; height: 32px; padding: 0 10px; border-radius: 6px; cursor: default; transition: background-color .1s; }
+  .mi:hover { background: var(--hover); }
+  .mi .l { flex: 1; }
+  .mi .k { color: var(--muted); font-size: 12px; }
+  .mi svg { stroke: var(--fg); opacity: .85; }
+  .sep { height: 1px; background: var(--border); margin: 5px 4px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 <body>
 <div id="list"></div>
 <script>
-  var ICON = {
-    search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="M21 21l-4.3-4.3"/></svg>',
-    bookmark: '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.95 6 6.55.95-4.75 4.62 1.12 6.53L12 17.5l-5.87 3.1 1.12-6.53L2.5 9.45l6.55-.95L12 2.5z"/></svg>',
-    history: '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>'
+  var P = {
+    search: 'M11 3.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zM21 21l-4.3-4.3',
+    bookmark: 'M12 2.5l2.95 6 6.55.95-4.75 4.62 1.12 6.53L12 17.5l-5.87 3.1 1.12-6.53L2.5 9.45l6.55-.95L12 2.5z',
+    history: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2',
+    plus: 'M12 5v14M5 12h14',
+    private: 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22',
+    download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+    ext: 'M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6zM4 14h6v6H4z',
+    find: 'M11 3.5a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15zM21 21l-4.3-4.3',
+    code: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
+    full: 'M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3',
+    print: 'M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z',
+    settings: 'M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4',
+    quit: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9'
   };
-  var items = [], sel = -1;
+  function svg(name) { return '<svg viewBox="0 0 24 24"><path d="' + (P[name] || P.history) + '"/></svg>'; }
+  var items = [], sel = -1, mode = 'sug';
   function post(o) { window.ipc.postMessage(JSON.stringify(o)); }
-  function draw() {
+
+  function drawSug() {
+    document.body.className = 'sug';
     var box = document.getElementById('list');
     box.textContent = '';
     items.forEach(function (it, i) {
@@ -39,7 +62,7 @@
       el.className = 'it' + (i === sel ? ' sel' : '');
       el.style.setProperty('--i', i);
       var tag = it.kind === 'search' ? 'Ara' : it.kind === 'bookmark' ? 'Yer imi' : '';
-      el.innerHTML = ICON[it.kind] || ICON.history;
+      el.innerHTML = svg(it.kind === 'search' ? 'search' : it.kind === 'bookmark' ? 'bookmark' : 'history');
       var tx = document.createElement('div'); tx.className = 'tx';
       var ti = document.createElement('span'); ti.className = 'ti'; ti.textContent = it.title;
       tx.appendChild(ti);
@@ -51,13 +74,39 @@
       box.appendChild(el);
     });
   }
+
+  function drawMenu(list) {
+    document.body.className = 'menu';
+    var box = document.getElementById('list');
+    box.textContent = '';
+    list.forEach(function (m) {
+      if (m.sep) { var s = document.createElement('div'); s.className = 'sep'; box.appendChild(s); return; }
+      var el = document.createElement('div');
+      el.className = 'mi';
+      el.innerHTML = svg(m.icon) + '<span class="l"></span><span class="k"></span>';
+      el.querySelector('.l').textContent = m.label;
+      el.querySelector('.k').textContent = m.key || '';
+      el.addEventListener('mousedown', function (e) { e.preventDefault(); post({ cmd: 'menu_pick', id: m.id }); });
+      box.appendChild(el);
+    });
+  }
+
   window.oziPop = {
-    set: function (list, s) { items = list; sel = s; draw(); },
+    set: function (list, s) { mode = 'sug'; items = list; sel = s; drawSug(); },
+    menu: function (list) { mode = 'menu'; drawMenu(list); },
     select: function (s) {
       sel = s;
       var els = document.querySelectorAll('.it');
       for (var i = 0; i < els.length; i++) els[i].classList.toggle('sel', i === s);
+    },
+    theme: function (theme, accent) {
+      var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      if (accent) document.documentElement.style.setProperty('--accent', accent);
     }
   };
+  // Menü odak kaybedince ya da Esc ile kapanır
+  window.addEventListener('blur', function () { if (mode === 'menu') post({ cmd: 'menu_hide' }); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && mode === 'menu') post({ cmd: 'menu_hide' }); });
 </script>
 </html>

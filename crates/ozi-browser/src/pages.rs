@@ -20,8 +20,7 @@ pub struct PageCtx {
 }
 
 const STYLE: &str = r#"
-:root{--bg:#121318;--card:#1b1c23;--card2:#22232b;--fg:#eceef4;--muted:#8e91a1;--accent:#ff7a2f;--accent2:#ff4d8d;--border:#2b2c35;--ease:cubic-bezier(.2,.8,.2,1)}
-@media (prefers-color-scheme:light){:root{--bg:#eef0f6;--card:#fff;--card2:#f3f4f9;--fg:#1b1c22;--muted:#6a6c7a;--border:#dcdfe9}}
+:root{--ease:cubic-bezier(.2,.8,.2,1)}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Segoe UI",sans-serif}
 main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
 nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 26px;animation:fadeUp .45s var(--ease) both}
@@ -49,8 +48,42 @@ code{background:var(--card2);padding:1px 6px;border-radius:6px;font-size:.9em}
 .switch i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .25s var(--ease)}
 .switch input:checked+i{background:linear-gradient(135deg,var(--accent),var(--accent2))}.switch input:checked+i::after{transform:translateX(18px)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}}
+.seg{display:inline-flex;background:var(--card2);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;padding:7px 16px;border-radius:8px;color:var(--muted)}
+.seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 3px var(--shadow)}
+.sw{width:30px;height:30px;border-radius:50%;border:0;padding:0;cursor:pointer;transition:transform .15s var(--ease),box-shadow .2s}
+.sw:hover{transform:scale(1.12)}.sw.on{box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--fg)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 "#;
+
+
+/// Geçerli tema (sayfalar her istekte buradan okur): `(tema, vurgu)`.
+static THEME: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
+
+pub fn set_theme(theme: &str, accent: &str) {
+    if let Ok(mut t) = THEME.lock() {
+        *t = (theme.to_string(), accent.to_string());
+    }
+}
+
+const LIGHT: &str = "--bg:#f9f9fb;--card:#ffffff;--card2:#f0f0f4;--fg:#15141a;--muted:#5b5b66;--border:#dcdce2;--shadow:rgba(0,0,0,.14)";
+const DARK: &str = "--bg:#1c1b22;--card:#2b2a33;--card2:#42414d;--fg:#fbfbfe;--muted:#bfbfc9;--border:#3a3944;--shadow:rgba(0,0,0,.45)";
+
+/// `(<style> içeriği, <html> öznitelikleri)` — "system" ise sistemin koyu/açık tercihini izler.
+fn theme_parts() -> (String, String) {
+    let (theme, accent) = THEME.lock().map(|t| t.clone()).unwrap_or_default();
+    let hex = ozi_core::settings::accent_hex(&accent);
+    let css = format!(
+        ":root{{{LIGHT};--accent:{hex};--accent2:var(--accent)}}\
+         @media (prefers-color-scheme:dark){{:root:not([data-theme=light]){{{DARK}}}}}\
+         :root[data-theme=dark]{{{DARK}}}:root[data-theme=light]{{{LIGHT}}}"
+    );
+    let attr = match theme.as_str() {
+        "light" | "dark" => format!(" data-theme={theme}"),
+        _ => String::new(),
+    };
+    (css, attr)
+}
 
 /// JSON'u `<script>` içine güvenle gömmek için kaçış.
 fn embed(v: &Value) -> String {
@@ -70,9 +103,10 @@ fn page(active: &str, title: &str, body: &str, script: &str) -> String {
         .iter()
         .map(|(id, label, href)| format!("<a href=\"{href}\"{}>{label}</a>", if *id == active { " class=on" } else { "" }))
         .collect();
+    let (tok, attr) = theme_parts();
     format!(
-        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title>\
-         <style>{STYLE}</style><main><nav>{nav}</nav>{body}</main><script>function send(o){{window.ipc.postMessage(JSON.stringify(o));}}\n\
+        "<!doctype html><html lang=tr{attr}><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>{title}</title>\
+         <style>{tok}{STYLE}</style><main><nav>{nav}</nav>{body}</main><script>function send(o){{window.ipc.postMessage(JSON.stringify(o));}}\n\
          document.querySelectorAll('.card').forEach(function(c,i){{c.style.setProperty('--i',Math.min(i,12));}});\n{script}</script>"
     )
 }
@@ -111,28 +145,26 @@ fn newtab(settings: &SettingsRef, user: &UserRef) -> String {
     let css = r#"
 body{min-height:100vh;overflow-x:hidden}
 .bg{position:fixed;inset:0;z-index:-1;overflow:hidden}
-.bg i{position:absolute;width:55vmax;height:55vmax;border-radius:50%;filter:blur(90px);opacity:.38;animation:drift 26s ease-in-out infinite alternate}
-.bg i:nth-child(1){background:#ff7a2f;left:-15vmax;top:-20vmax}
-.bg i:nth-child(2){background:#ff4d8d;right:-20vmax;top:5vmax;animation-duration:32s;animation-delay:-8s}
-.bg i:nth-child(3){background:#6a5cff;left:20vmax;bottom:-28vmax;animation-duration:38s;animation-delay:-15s}
-@media (prefers-color-scheme:light){.bg i{opacity:.28}}
-@keyframes drift{to{transform:translate(9vmax,6vmax) scale(1.15)}}
+.bg i{position:absolute;width:70vmax;height:70vmax;border-radius:50%;will-change:transform;animation:drift 34s ease-in-out infinite alternate}
+.bg i:nth-child(1){background:radial-gradient(circle,color-mix(in srgb,var(--accent) 40%,transparent) 0,transparent 62%);left:-25vmax;top:-32vmax}
+.bg i:nth-child(2){background:radial-gradient(circle,rgba(255,77,141,.26) 0,transparent 62%);right:-32vmax;top:-2vmax;animation-duration:42s;animation-delay:-9s}
+.bg i:nth-child(3){background:radial-gradient(circle,rgba(106,92,255,.26) 0,transparent 62%);left:12vmax;bottom:-42vmax;animation-duration:48s;animation-delay:-17s}
+@keyframes drift{to{transform:translate3d(9vmax,6vmax,0) scale(1.12)}}
 .wrap{max-width:720px;margin:0 auto;padding:11vh 20px 40px;text-align:center}
 #clock{font-size:76px;font-weight:200;letter-spacing:-3px;line-height:1;animation:fadeUp .7s var(--ease) both}
 #greet{margin:8px 0 30px;color:var(--muted);font-size:17px;animation:fadeUp .7s var(--ease) .08s both}
 form{position:relative;max-width:580px;margin:0 auto;animation:fadeUp .7s var(--ease) .16s both}
-form input{padding:16px 54px 16px 24px;border-radius:32px;font-size:17px;background:rgba(127,127,140,.14);border:1px solid rgba(127,127,140,.25);
- backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:border-color .2s,box-shadow .25s,transform .3s var(--ease),background .2s}
-form input:focus{transform:scale(1.025);background:rgba(127,127,140,.2)}
+form input{padding:16px 54px 16px 24px;border-radius:32px;font-size:17px;background:var(--card);border:1px solid var(--border);box-shadow:0 1px 4px var(--shadow);transition:border-color .2s,box-shadow .25s,transform .3s var(--ease),background .2s}
+form input:focus{transform:scale(1.02)}
 form button{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:40px;height:40px;padding:0;border-radius:50%;border:0;font-size:18px;
- background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+ background:var(--accent);color:#fff}
 form button:active{transform:translateY(-50%) scale(.92)}
 .hint{margin:14px 0 36px;color:var(--muted);font-size:13px;animation:fadeUp .7s var(--ease) .24s both}
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .tile{display:flex;flex-direction:column;align-items:center;gap:9px;padding:16px 8px 12px;border-radius:18px;text-decoration:none!important;color:var(--fg);
- background:rgba(127,127,140,.1);border:1px solid transparent;animation:fadeUp .6s var(--ease) both;animation-delay:calc(var(--i)*55ms + 330ms);
+ background:var(--card);border:1px solid var(--border);animation:fadeUp .6s var(--ease) both;animation-delay:calc(var(--i)*55ms + 330ms);
  transition:transform .22s var(--ease),background .2s,border-color .2s,box-shadow .25s}
-.tile:hover{transform:translateY(-4px);background:rgba(127,127,140,.2);border-color:rgba(255,122,47,.4);box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.tile:hover{transform:translateY(-4px);border-color:var(--accent);box-shadow:0 10px 24px var(--shadow)}
 .tile:active{transform:translateY(-1px) scale(.97)}
 .av{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;font-weight:700;font-size:20px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.25)}
 .tile span.n{max-width:100%;font-size:13px}
@@ -158,9 +190,10 @@ document.getElementById('f').onsubmit=function(e){{e.preventDefault();send({{cmd
 window.addEventListener('keydown',function(e){{if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.key.length===1)document.getElementById('q').focus();}});"#,
         sites = embed(&Value::Array(sites))
     );
+    let (tok, attr) = theme_parts();
     format!(
-        "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Yeni sekme</title>\
-         <style>{STYLE}{css}</style><div class=bg><i></i><i></i><i></i></div>\
+        "<!doctype html><html lang=tr{attr}><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Yeni sekme</title>\
+         <style>{tok}{STYLE}{css}</style><div class=bg><i></i><i></i><i></i></div>\
          <div class=wrap><div id=clock></div><div id=greet></div>\
          <form id=f><input type=text id=q autofocus autocomplete=off placeholder=\"{first_e} ile ara ya da adres yaz\"><button type=submit>→</button></form>\
          <div class=hint>{second}</div><div class=tiles id=tiles></div>\
@@ -291,6 +324,8 @@ fn settings(settings: &SettingsRef) -> String {
     let s = settings.read().map(|s| s.clone()).unwrap_or_default();
     let data = serde_json::to_value(&s).unwrap_or(Value::Null);
     let body = r#"<h1>Ayarlar</h1>
+<div class="card flat"><b>Görünüm</b><div style="margin-top:10px"><div class=seg id=themeSeg></div></div>
+<div class=row id=swatches style="margin-top:14px"></div></div>
 <div class="card flat"><b>Arama motorları</b><p class=muted>Seçili olan varsayılandır. Adres çubuğunda <code>anahtar sorgu</code> yazarak diğerlerini kullanın. URL'de <code>%s</code> sorgunun yerine geçer.</p>
 <div id=engines></div>
 <div class=row style="margin-top:10px"><input type=text id=nn placeholder="Ad" style="width:130px"><input type=text id=nk placeholder="Anahtar" style="width:90px">
@@ -299,8 +334,19 @@ fn settings(settings: &SettingsRef) -> String {
 <div class="card flat"><label class=switch><input type=checkbox id=ads><i></i><span>Reklam ve izleyicileri engelle <span class=muted>(Linux)</span></span></label></div>
 <div class="card flat"><label class=switch><input type=checkbox id=rs><i></i><span>Açılışta önceki sekmeleri geri yükle <span class=muted>(gizli sekmeler hariç)</span></span></label></div>
 <div class=row><button class=p id=save>Kaydet</button><span id=msg class=muted></span></div>"#;
+    let accents = Value::Array(
+        ozi_core::settings::ACCENTS.iter().map(|(id, hex)| json!([id, hex])).collect(),
+    );
     let script = format!(
-        r#"var S={data};var box=document.getElementById('engines');
+        r#"var ACC={accents};var S={data};var box=document.getElementById('engines');
+var TH=[['system','Sistem'],['light','Açık'],['dark','Koyu']];
+function drawTheme(){{var seg=document.getElementById('themeSeg');seg.textContent='';
+TH.forEach(function(t){{var b=document.createElement('button');b.textContent=t[1];b.className=S.theme===t[0]?'on':'';
+b.onclick=function(){{S.theme=t[0];if(t[0]==='system')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t[0]);drawTheme();}};seg.appendChild(b);}});
+var sw=document.getElementById('swatches');sw.textContent='';
+ACC.forEach(function(a){{var b=document.createElement('button');b.className='sw'+(S.accent===a[0]?' on':'');b.style.background=a[1];b.title=a[0];
+b.onclick=function(){{S.accent=a[0];document.documentElement.style.setProperty('--accent',a[1]);drawTheme();}};sw.appendChild(b);}});}}
+drawTheme();
 function draw(){{box.textContent='';S.engines.forEach(function(e,i){{var r=document.createElement('div');r.className='row';r.style.margin='4px 0';
 var rd=document.createElement('input');rd.type='radio';rd.name='def';rd.checked=e.id===S.default_engine;rd.onchange=function(){{S.default_engine=e.id;}};
 var n=document.createElement('b');n.style.width='120px';n.textContent=e.name;var k=document.createElement('code');k.style.width='60px';k.textContent=e.keyword;
@@ -315,7 +361,8 @@ S.engines.push({{id:'',name:nm,keyword:kw,url:ur}});nn.value=nk.value=nu.value='
 home.value=S.homepage;ads.checked=S.block_ads;rs.checked=!!S.restore_session;
 document.getElementById('save').onclick=function(){{S.homepage=home.value.trim()||'ozi://newtab';S.block_ads=ads.checked;S.restore_session=rs.checked;send({{cmd:'settings_save',settings:S}});}};
 draw();"#,
-        data = embed(&data)
+        data = embed(&data),
+        accents = embed(&accents)
     );
     page("settings", "Ayarlar", body, &script)
 }
